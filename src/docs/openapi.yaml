@@ -374,6 +374,367 @@ paths:
                     type: boolean
 
   ###########
+  ## PUBLIC ##
+  ###########
+
+  /public/routes:
+    get:
+      summary: List all routes (public)
+      tags: [Public]
+      security: []
+      responses:
+        "200":
+          description: List of all routes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Route"
+
+  /public/buses:
+    get:
+      summary: List all buses (public)
+      tags: [Public]
+      security: []
+      responses:
+        "200":
+          description: List of all buses
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Bus"
+
+  /public/trips:
+    get:
+      summary: Search trips (public)
+      tags: [Public]
+      security: []
+      description: Search for trips with optional filters
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+          description: Filter by origin (contains)
+          example: "Jakarta"
+        - name: to
+          in: query
+          schema:
+            type: string
+          description: Filter by destination (contains)
+          example: "Bandung"
+        - name: date
+          in: query
+          schema:
+            type: string
+            format: date
+          description: Filter by departure date (YYYY-MM-DD)
+          example: "2024-01-20"
+      responses:
+        "200":
+          description: List of trips matching filters
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Trip"
+
+  /public/trips/{id}:
+    get:
+      summary: Get trip detail with seat availability (public)
+      tags: [Public]
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Trip details with seat layout
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  trip:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      bus:
+                        $ref: "#/components/schemas/Bus"
+                      route:
+                        $ref: "#/components/schemas/Route"
+                      departureTime:
+                        type: string
+                        format: date-time
+                      arrivalTime:
+                        type: string
+                        format: date-time
+                      price:
+                        type: integer
+                  seats:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        seatCode:
+                          type: string
+                        isBooked:
+                          type: boolean
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Trip not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  ############
+  ## BOOKING ##
+  ############
+
+  /booking/me:
+    get:
+      summary: Get my bookings
+      tags: [Booking]
+      description: Get paginated list of current user's bookings
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: perPage
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        "200":
+          description: Paginated booking list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  page:
+                    type: integer
+                  perPage:
+                    type: integer
+                  total:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        userId:
+                          type: string
+                        tripId:
+                          type: string
+                        status:
+                          type: string
+                        totalPrice:
+                          type: integer
+                        trip:
+                          $ref: "#/components/schemas/Trip"
+                        seats:
+                          type: array
+                          items:
+                            type: object
+                        payment:
+                          $ref: "#/components/schemas/Payment"
+
+  /booking/me/upcoming:
+    get:
+      summary: Get upcoming confirmed bookings
+      tags: [Booking]
+      description: Get current user's confirmed bookings with future departure times
+      responses:
+        "200":
+          description: List of upcoming bookings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        userId:
+                          type: string
+                        tripId:
+                          type: string
+                        status:
+                          type: string
+                        totalPrice:
+                          type: integer
+                        trip:
+                          $ref: "#/components/schemas/Trip"
+                        seats:
+                          type: array
+                          items:
+                            type: object
+                        payment:
+                          $ref: "#/components/schemas/Payment"
+
+  /booking/{id}:
+    get:
+      summary: Get booking detail
+      tags: [Booking]
+      description: Get detailed booking information (owner or admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Booking details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  userId:
+                    type: string
+                  tripId:
+                    type: string
+                  status:
+                    type: string
+                  totalPrice:
+                    type: integer
+                  user:
+                    $ref: "#/components/schemas/User"
+                  trip:
+                    $ref: "#/components/schemas/Trip"
+                  seats:
+                    type: array
+                    items:
+                      type: object
+                  payment:
+                    $ref: "#/components/schemas/Payment"
+        "403":
+          description: Forbidden - not owner or admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Booking not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /booking/{id}/cancel:
+    post:
+      summary: Cancel booking
+      tags: [Booking]
+      description: Cancel a pending booking (owner or admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Booking cancelled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        "400":
+          description: Only pending bookings can be cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Forbidden - not owner or admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Booking not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  ############
+  ## PAYMENT ##
+  ############
+
+  /payment/me:
+    get:
+      summary: Get my payments
+      tags: [Payment]
+      description: Get all payments for current user's bookings
+      responses:
+        "200":
+          description: List of user payments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    bookingId:
+                      type: string
+                    orderId:
+                      type: string
+                    transactionId:
+                      type: string
+                      nullable: true
+                    amount:
+                      type: integer
+                    status:
+                      type: string
+                    booking:
+                      $ref: "#/components/schemas/Booking"
+                    createdAt:
+                      type: string
+                      format: date-time
+
+  ###########
   ## ADMIN ##
   ###########
 

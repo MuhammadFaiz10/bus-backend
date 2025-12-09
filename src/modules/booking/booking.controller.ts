@@ -1,12 +1,14 @@
 import { Context } from "hono";
 import { prisma } from "../../config/database";
+import { createBookingSchema } from "./booking.schema";
 
 export async function createBookingHandler(c: Context) {
   const body = await c.req.json();
-  const { tripId, seatCodes } = body as { tripId: string; seatCodes: string[] };
+  const parsed = createBookingSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: parsed.error.issues }, 400);
+
+  const { tripId, seatCodes } = parsed.data;
   const user = (c as any).user;
-  if (!tripId || !seatCodes || seatCodes.length === 0)
-    return c.json({ error: "Bad request" }, 400);
 
   const trip = await prisma.trip.findUnique({ where: { id: tripId } });
   if (!trip) return c.json({ error: "Trip not found" }, 404);
@@ -54,4 +56,107 @@ export async function createBookingHandler(c: Context) {
   } catch (err: any) {
     return c.json({ error: err.message || "Cannot create booking" }, 400);
   }
+}
+
+/**
+ * GET /booking/me
+ */
+export async function getMyBookingsHandler(c: Context) {
+  const user = (c as any).user;
+  const q = c.req.query();
+  const page = Number(q.page) || 1;
+  const perPage = Math.min(Number(q.perPage) || 20, 100);
+
+  const [total, data] = await Promise.all([
+    prisma.booking.count({ where: { userId: user.sub } }),
+    prisma.booking.findMany({
+      where: { userId: user.sub },
+      include: {
+        trip: { include: { bus: true, route: true } },
+        seats: { include: { seat: true } },
+        payment: true,
+      },
+      skip: (page - 1) * perPage,
+      take: perPage,
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
+
+  return c.json({ page, perPage, total, data });
+}
+
+/**
+ * GET /booking/me/upcoming
+ */
+export async function upcomingBookingsHandler(c: Context) {
+  const user = (c as any).user;
+  const now = new Date();
+  const data = await prisma.booking.findMany({
+    where: {
+      userId: user.sub,
+      status: "CONFIRMED",
+      trip: { departureTime: { gte: now } },
+    },
+    include: {
+      trip: { include: { bus: true, route: true } },
+      seats: { include: { seat: true } },
+      payment: true,
+    },
+    orderBy: { trip: { departureTime: "asc" } },
+  });
+  return c.json({ data });
+}
+
+/**
+ * GET /booking/:id
+ */
+export async function getBookingDetailHandler(c: Context) {
+  const id = c.req.param("id");
+  const booking = await prisma.booking.findUnique({
+    where: { id },
+    include: {
+      user: true,
+      trip: { include: { bus: true, route: true } },
+      seats: { include: { seat: true } },
+      payment: true,
+    },
+  });
+  if (!booking) return c.json({ error: "Not found" }, 404);
+  return c.json(booking);
+}
+
+/**
+ * POST /booking/:id/cancel
+ * Only allow cancel if status is PENDING (or we can allow other policies)
+ */
+export async function cancelBookingHandler(c: Context) {
+  const id = c.req.param("id");
+  const booking = await prisma.booking.findUnique({
+    where: { id },
+    include: { seats: true },
+  });
+  if (!booking) return c.json({ error: "Not found" }, 404);
+
+  if (booking.status !== "PENDING") {
+    return c.json({ error: "Only pending bookings can be cancelled" }, 400);
+  }
+
+  await prisma.$transaction(async (tx) => {
+    // update booking
+    await tx.booking.update({ where: { id }, data: { status: "CANCELLED" } });
+    // free seats & delete bookingSeat
+    const seatIds = booking.seats.map((s) => s.seatId);
+    await tx.bookingSeat.deleteMany({ where: { bookingId: id } });
+    await tx.seat.updateMany({
+      where: { id: { in: seatIds } },
+      data: { isBooked: false },
+    });
+    // delete payment record (or mark failed)
+    await tx.payment.updateMany({
+      where: { bookingId: id },
+      data: { status: "FAILED" },
+    });
+  });
+
+  return c.json({ success: true });
 }

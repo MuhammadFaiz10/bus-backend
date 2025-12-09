@@ -76,3 +76,13 @@ export async function midtransWebhookHandler(c: Context) {
 
   return c.json({ success: true });
 }
+
+export async function getMyPaymentsHandler(c: Context) {
+  const user = (c as any).user;
+  const payments = await prisma.payment.findMany({
+    where: { booking: { userId: user.sub } },
+    include: { booking: true },
+    orderBy: { createdAt: "desc" },
+  });
+  return c.json(payments);
+}
