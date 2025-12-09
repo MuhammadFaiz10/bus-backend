@@ -1,17 +1,50 @@
 
 import React, { useEffect, useState } from 'react'
 import api from '../services/api'
+import { showToast } from '../services/toast'
 
 export default function RoutesPage(){
   const [routes, setRoutes] = useState<any[]>([])
   const [form, setForm] = useState({origin:'', destination:'', distanceKm:150})
-  useEffect(()=>{ api.get('/admin/routes').then(r=>setRoutes(r.data)).catch(()=>{}) },[])
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    api.get('/admin/routes')
+      .then(r => setRoutes(r.data))
+      .catch((err: any) => showToast(err.userMessage || 'Gagal memuat routes', 'error'))
+  }, [])
+
   async function createRoute(){
-    await api.post('/admin/routes', form)
-    setForm({origin:'',destination:'',distanceKm:150})
-    const r = await api.get('/admin/routes'); setRoutes(r.data)
+    if (!form.origin || !form.destination) {
+      showToast('Origin dan destination harus diisi', 'error')
+      return
+    }
+
+    setLoading(true)
+    try {
+      await api.post('/admin/routes', form)
+      showToast('Route berhasil dibuat', 'success')
+      setForm({origin:'', destination:'', distanceKm:150})
+      const r = await api.get('/admin/routes')
+      setRoutes(r.data)
+    } catch (err: any) {
+      showToast(err.userMessage || 'Gagal membuat route', 'error')
+    } finally {
+      setLoading(false)
+    }
   }
-  async function del(id:string){ await api.delete('/admin/routes/'+id); setRoutes(routes.filter(b=>b.id!==id)) }
+
+  async function del(id:string){
+    if (!confirm('Apakah Anda yakin ingin menghapus route ini?')) return
+
+    try {
+      await api.delete('/admin/routes/'+id)
+      setRoutes(routes.filter(r => r.id !== id))
+      showToast('Route berhasil dihapus', 'success')
+    } catch (err: any) {
+      showToast(err.userMessage || 'Gagal menghapus route', 'error')
+    }
+  }
   return (
     <div>
       <h2>Routes</h2>
@@ -20,7 +53,9 @@ export default function RoutesPage(){
           <input className="input" placeholder="origin" value={form.origin} onChange={e=>setForm({...form,origin:e.target.value})} />
           <input className="input" placeholder="destination" value={form.destination} onChange={e=>setForm({...form,destination:e.target.value})} />
           <input className="input" placeholder="distanceKm" value={String(form.distanceKm)} onChange={e=>setForm({...form,distanceKm:Number(e.target.value)})} />
-          <button className="button" onClick={createRoute}>Create</button>
+          <button className="button" onClick={createRoute} disabled={loading}>
+            {loading ? 'Memproses...' : 'Create'}
+          </button>
         </div>
       </div>
       <div className="card">

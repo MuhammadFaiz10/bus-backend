@@ -1,0 +1,127 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+enum BookingStatus {
+  PENDING
+  PAID
+  CONFIRMED
+  EXPIRED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      Role     @default(USER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookings Booking[]
+}
+
+model Bus {
+  id        String    @id @default(uuid())
+  name      String
+  plate     String    @unique
+  totalSeat Int
+  createdAt DateTime  @default(now())
+
+  trips Trip[]
+}
+
+model Route {
+  id          String    @id @default(uuid())
+  origin      String
+  destination String
+  distanceKm  Int
+  createdAt   DateTime  @default(now())
+
+  trips Trip[]
+}
+
+model Trip {
+  id            String       @id @default(uuid())
+  busId         String
+  routeId       String
+  departureTime DateTime
+  arrivalTime   DateTime
+  price         Int
+  createdAt     DateTime     @default(now())
+
+  bus   Bus   @relation(fields: [busId], references: [id])
+  route Route @relation(fields: [routeId], references: [id])
+
+  seats    Seat[]
+  bookings Booking[]
+}
+
+model Seat {
+  id        String   @id @default(uuid())
+  tripId    String
+  seatCode  String
+  isBooked  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  trip Trip @relation(fields: [tripId], references: [id])
+
+  bookingSeats BookingSeat[]
+}
+
+model Booking {
+  id         String         @id @default(uuid())
+  userId     String
+  tripId     String
+  status     BookingStatus  @default(PENDING)
+  totalPrice Int
+  expiresAt  DateTime
+  createdAt  DateTime       @default(now())
+
+  user   User @relation(fields: [userId], references: [id])
+  trip   Trip @relation(fields: [tripId], references: [id])
+
+  seats   BookingSeat[]
+  payment Payment?
+}
+
+model BookingSeat {
+  id        String   @id @default(uuid())
+  bookingId String
+  seatId    String
+
+  booking Booking @relation(fields: [bookingId], references: [id])
+  seat     Seat    @relation(fields: [seatId], references: [id])
+
+  @@unique([bookingId, seatId])
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  bookingId     String        @unique
+  orderId       String        @unique
+  transactionId String?
+  amount        Int
+  status        PaymentStatus @default(PENDING)
+  rawResponse   Json?
+  createdAt     DateTime      @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id])
+}

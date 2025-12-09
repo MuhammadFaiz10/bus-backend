@@ -1,11 +1,14 @@
 
 import React, { useEffect, useState } from 'react'
 import api from '../services/api'
+import { showToast } from '../services/toast'
 
 export default function Dashboard(){
   const [stats, setStats] = useState<any>({})
   useEffect(() => {
-    api.get('/admin/bookings/stats').then(r=>setStats(r.data)).catch(()=>{})
+    api.get('/admin/bookings/stats')
+      .then(r => setStats(r.data))
+      .catch((err: any) => showToast(err.userMessage || 'Gagal memuat statistik', 'error'))
   },[])
   return (
     <div>

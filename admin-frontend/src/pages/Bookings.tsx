@@ -1,10 +1,15 @@
 
 import React, { useEffect, useState } from 'react'
 import api from '../services/api'
+import { showToast } from '../services/toast'
 
 export default function Bookings(){
   const [bookings, setBookings] = useState<any[]>([])
-  useEffect(()=>{ api.get('/admin/bookings').then(r=>setBookings(r.data.data).catch(()=>{})) },[])
+  useEffect(()=>{
+    api.get('/admin/bookings')
+      .then(r => setBookings(r.data.data || []))
+      .catch((err: any) => showToast(err.userMessage || 'Gagal memuat bookings', 'error'))
+  },[])
   return (
     <div>
       <h2>Bookings</h2>

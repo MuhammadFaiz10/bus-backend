@@ -8,6 +8,7 @@ import RoutesPage from './pages/Routes'
 import Trips from './pages/Trips'
 import Bookings from './pages/Bookings'
 import Layout from './components/Layout'
+import Toast from './components/Toast'
 import { getToken } from './services/auth'
 
 function PrivateRoute({ children }: { children: JSX.Element }) {
@@ -18,15 +19,18 @@ function PrivateRoute({ children }: { children: JSX.Element }) {
 
 export default function App(){
   return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
-        <Route index element={<Dashboard />} />
-        <Route path="buses" element={<Buses />} />
-        <Route path="routes" element={<RoutesPage />} />
-        <Route path="trips" element={<Trips />} />
-        <Route path="bookings" element={<Bookings />} />
-      </Route>
-    </Routes>
+    <>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
+          <Route index element={<Dashboard />} />
+          <Route path="buses" element={<Buses />} />
+          <Route path="routes" element={<RoutesPage />} />
+          <Route path="trips" element={<Trips />} />
+          <Route path="bookings" element={<Bookings />} />
+        </Route>
+      </Routes>
+      <Toast />
+    </>
   )
 }
