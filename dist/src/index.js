@@ -7,6 +7,7 @@ dotenv.config();
 serve({
     fetch: app.fetch,
     port: Number(PORT) || 3000,
+    hostname: "0.0.0.0",
 });
 console.log(`🚀 Server running on http://localhost:${PORT || 3000}`);
 console.log(`📚 Swagger UI available at http://localhost:${PORT || 3000}/docs`);

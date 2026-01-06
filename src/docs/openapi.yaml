@@ -843,6 +843,228 @@ paths:
                   value:
                     error: "Invalid credentials"
 
+  /auth/me:
+    get:
+      summary: Get current user profile
+      tags: [Auth]
+      description: |
+        Retrieve the profile of the currently authenticated user.
+        Returns user information including id, name, email, role, and creation date.
+        Requires valid JWT token in Authorization header.
+
+      responses:
+        "200":
+          description: User profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                    example: "550e8400-e29b-41d4-a716-446655440000"
+                  name:
+                    type: string
+                    example: "John Doe"
+                  email:
+                    type: string
+                    format: email
+                    example: "john.doe@example.com"
+                  role:
+                    type: string
+                    enum: [ADMIN, USER]
+                    example: "USER"
+                  createdAt:
+                    type: string
+                    format: date-time
+                    example: "2024-01-15T10:30:00Z"
+
+        "401":
+          description: Unauthorized - Invalid or missing token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnauthorizedError"
+
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundError"
+
+    put:
+      summary: Update current user profile
+      tags: [Auth]
+      description: |
+        Update the profile of the currently authenticated user.
+        Can update name and/or email. Email must be unique across all users.
+        Requires valid JWT token in Authorization header.
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: New display name
+                  example: "John Updated"
+                email:
+                  type: string
+                  format: email
+                  description: New email address (must be unique)
+                  example: "john.new@example.com"
+            examples:
+              updateName:
+                summary: Update name only
+                value:
+                  name: "Johnny Doe"
+              updateEmail:
+                summary: Update email only
+                value:
+                  email: "newemail@example.com"
+              updateBoth:
+                summary: Update both name and email
+                value:
+                  name: "John Smith"
+                  email: "john.smith@example.com"
+
+      responses:
+        "200":
+          description: Profile updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  name:
+                    type: string
+                  email:
+                    type: string
+                    format: email
+                  role:
+                    type: string
+                    enum: [ADMIN, USER]
+
+        "400":
+          description: Validation error or email already in use
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/BusinessLogicError"
+              examples:
+                emailInUse:
+                  summary: Email already in use
+                  value:
+                    error: "Email already in use"
+                invalidEmail:
+                  summary: Invalid email format
+                  value:
+                    error:
+                      - path: ["email"]
+                        message: "Invalid email"
+
+        "401":
+          description: Unauthorized - Invalid or missing token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnauthorizedError"
+
+  /auth/change-password:
+    put:
+      summary: Change user password
+      tags: [Auth]
+      description: |
+        Change the password for the currently authenticated user.
+        Requires current password verification before setting new password.
+        New password must be at least 6 characters.
+        Requires valid JWT token in Authorization header.
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword:
+                  type: string
+                  format: password
+                  description: Current account password
+                  example: "oldPassword123"
+                newPassword:
+                  type: string
+                  format: password
+                  minLength: 6
+                  description: New password (minimum 6 characters)
+                  example: "newSecurePass456"
+            examples:
+              changePassword:
+                summary: Change password request
+                value:
+                  currentPassword: "myOldPassword"
+                  newPassword: "myNewSecurePassword"
+
+      responses:
+        "200":
+          description: Password changed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Password changed successfully"
+
+        "400":
+          description: Validation error or incorrect current password
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/BusinessLogicError"
+              examples:
+                incorrectPassword:
+                  summary: Current password is incorrect
+                  value:
+                    error: "Current password is incorrect"
+                passwordTooShort:
+                  summary: New password too short
+                  value:
+                    error:
+                      - path: ["newPassword"]
+                        message: "String must contain at least 6 character(s)"
+
+        "401":
+          description: Unauthorized - Invalid or missing token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnauthorizedError"
+
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundError"
+
   /booking:
     post:
       summary: Create new booking with seat selection
@@ -1150,7 +1372,16 @@ paths:
                 transaction_status:
                   type: string
                   description: Payment transaction status from Midtrans
-                  enum: [capture, settlement, pending, deny, cancel, expire, failure]
+                  enum:
+                    [
+                      capture,
+                      settlement,
+                      pending,
+                      deny,
+                      cancel,
+                      expire,
+                      failure,
+                    ]
                   example: "settlement"
                 fraud_status:
                   type: string

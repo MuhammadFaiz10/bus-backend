@@ -1,72 +1,167 @@
+import React, { useEffect, useState } from "react";
+import api from "../services/api";
+import { showToast } from "../services/toast";
 
-import React, { useEffect, useState } from 'react'
-import api from '../services/api'
-import { showToast } from '../services/toast'
-
-export default function Buses(){
-  const [buses, setBuses] = useState<any[]>([])
-  const [form, setForm] = useState({name:'', plate:'', totalSeat:40})
-  const [loading, setLoading] = useState(false)
+export default function Buses() {
+  const [buses, setBuses] = useState<any[]>([]);
+  const [form, setForm] = useState({ name: "", plate: "", totalSeat: 40 });
+  const [loading, setLoading] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
-    api.get('/admin/buses')
-      .then(r => setBuses(r.data))
-      .catch((err: any) => showToast(err.userMessage || 'Gagal memuat buses', 'error'))
-  }, [])
+    api
+      .get("/admin/buses")
+      .then((r) => setBuses(r.data))
+      .catch((err: any) =>
+        showToast(err.userMessage || "Gagal memuat buses", "error")
+      );
+  }, []);
 
-  async function createBus(){
+  async function createBus() {
     if (!form.name || !form.plate) {
-      showToast('Nama dan plate harus diisi', 'error')
-      return
+      showToast("Nama dan plate harus diisi", "error");
+      return;
     }
 
-    setLoading(true)
+    setLoading(true);
     try {
-      await api.post('/admin/buses', form)
-      showToast('Bus berhasil dibuat', 'success')
-      setForm({name:'', plate:'', totalSeat:40})
-      const r = await api.get('/admin/buses')
-      setBuses(r.data)
+      await api.post("/admin/buses", form);
+      showToast("Bus berhasil dibuat", "success");
+      setForm({ name: "", plate: "", totalSeat: 40 });
+      const r = await api.get("/admin/buses");
+      setBuses(r.data);
     } catch (err: any) {
-      showToast(err.userMessage || 'Gagal membuat bus', 'error')
+      showToast(err.userMessage || "Gagal membuat bus", "error");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   }
 
-  async function del(id:string){
-    if (!confirm('Apakah Anda yakin ingin menghapus bus ini?')) return
+  async function updateBus() {
+    if (!form.name || !form.plate) {
+      showToast("Nama dan plate harus diisi", "error");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await api.put("/admin/buses/" + editingId, form);
+      showToast("Bus berhasil diupdate", "success");
+      cancelEdit();
+      const r = await api.get("/admin/buses");
+      setBuses(r.data);
+    } catch (err: any) {
+      showToast(err.userMessage || "Gagal mengupdate bus", "error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function startEdit(bus: any) {
+    setEditingId(bus.id);
+    setForm({ name: bus.name, plate: bus.plate, totalSeat: bus.totalSeat });
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setForm({ name: "", plate: "", totalSeat: 40 });
+  }
+
+  async function del(id: string) {
+    if (!confirm("Apakah Anda yakin ingin menghapus bus ini?")) return;
 
     try {
-      await api.delete('/admin/buses/'+id)
-      setBuses(buses.filter(b => b.id !== id))
-      showToast('Bus berhasil dihapus', 'success')
+      await api.delete("/admin/buses/" + id);
+      setBuses(buses.filter((b) => b.id !== id));
+      showToast("Bus berhasil dihapus", "success");
     } catch (err: any) {
-      showToast(err.userMessage || 'Gagal menghapus bus', 'error')
+      showToast(err.userMessage || "Gagal menghapus bus", "error");
     }
   }
   return (
     <div>
       <h2>Buses</h2>
       <div className="card">
+        <h3>{editingId ? "Edit Bus" : "Tambah Bus"}</h3>
         <div className="form-row">
-          <input className="input" placeholder="name" value={form.name} onChange={e=>setForm({...form,name:e.target.value})} />
-          <input className="input" placeholder="plate" value={form.plate} onChange={e=>setForm({...form,plate:e.target.value})} />
-          <input className="input" placeholder="totalSeat" value={String(form.totalSeat)} onChange={e=>setForm({...form,totalSeat:Number(e.target.value)})} />
-          <button className="button" onClick={createBus} disabled={loading}>
-            {loading ? 'Memproses...' : 'Create'}
-          </button>
+          <input
+            className="input"
+            placeholder="name"
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+          />
+          <input
+            className="input"
+            placeholder="plate"
+            value={form.plate}
+            onChange={(e) => setForm({ ...form, plate: e.target.value })}
+          />
+          <input
+            className="input"
+            placeholder="totalSeat"
+            value={String(form.totalSeat)}
+            onChange={(e) =>
+              setForm({ ...form, totalSeat: Number(e.target.value) })
+            }
+          />
+          {editingId ? (
+            <>
+              <button className="button" onClick={updateBus} disabled={loading}>
+                {loading ? "Memproses..." : "Update"}
+              </button>
+              <button
+                className="button"
+                onClick={cancelEdit}
+                disabled={loading}
+                style={{ marginLeft: 8, background: "#6c757d" }}
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button className="button" onClick={createBus} disabled={loading}>
+              {loading ? "Memproses..." : "Create"}
+            </button>
+          )}
         </div>
       </div>
       <div className="card">
-        <table className="table"><thead><tr><th>Name</th><th>Plate</th><th>Seats</th><th>Action</th></tr></thead>
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Plate</th>
+              <th>Seats</th>
+              <th>Action</th>
+            </tr>
+          </thead>
           <tbody>
-            {buses.map(b=>(
-              <tr key={b.id}><td>{b.name}</td><td>{b.plate}</td><td>{b.totalSeat}</td><td><button onClick={()=>del(b.id)} className="button">Delete</button></td></tr>
+            {buses.map((b) => (
+              <tr key={b.id}>
+                <td>{b.name}</td>
+                <td>{b.plate}</td>
+                <td>{b.totalSeat}</td>
+                <td>
+                  <button
+                    onClick={() => startEdit(b)}
+                    className="button"
+                    style={{
+                      marginRight: 8,
+                      background: "#ffc107",
+                      color: "#000",
+                    }}
+                  >
+                    Edit
+                  </button>
+                  <button onClick={() => del(b.id)} className="button">
+                    Delete
+                  </button>
+                </td>
+              </tr>
             ))}
           </tbody>
         </table>
       </div>
     </div>
-  )
+  );
 }
