@@ -1,8 +1,9 @@
 import { Context } from "hono";
-import { prisma } from "../../config/database";
+import { HonoEnv } from "../../types/app";
 import { createTransaction } from "./midtrans.client";
 
-export async function createPaymentHandler(c: Context) {
+export async function createPaymentHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const body = await c.req.json();
   const { bookingId } = body;
   const user = (c as any).user;
@@ -17,7 +18,12 @@ export async function createPaymentHandler(c: Context) {
     return c.json({ error: "Booking is not pending" }, 400);
 
   const orderId = `BOOK-${booking.id}`;
-  const mid = await createTransaction(orderId, booking.totalPrice, {
+  
+  // Get env vars
+  const serverKey = c.env.MIDTRANS_SERVER_KEY;
+  const isProd = c.env.MIDTRANS_IS_PRODUCTION === "true";
+
+  const mid = await createTransaction(serverKey, isProd, orderId, booking.totalPrice, {
     first_name: user.email,
     email: user.email,
   });
@@ -30,7 +36,8 @@ export async function createPaymentHandler(c: Context) {
   return c.json({ payment: mid });
 }
 
-export async function midtransWebhookHandler(c: Context) {
+export async function midtransWebhookHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const body = await c.req.json();
   const orderId = body.order_id;
   const status = body.transaction_status;
@@ -77,7 +84,8 @@ export async function midtransWebhookHandler(c: Context) {
   return c.json({ success: true });
 }
 
-export async function getMyPaymentsHandler(c: Context) {
+export async function getMyPaymentsHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const user = (c as any).user;
   const payments = await prisma.payment.findMany({
     where: { booking: { userId: user.sub } },

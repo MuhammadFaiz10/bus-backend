@@ -1,5 +1,8 @@
 import { Hono } from "hono";
-import { serveStatic } from "@hono/node-server/serve-static";
+import { logger } from "hono/logger";
+// import { serveStatic } from "@hono/node-server/serve-static";
+import { prismaMiddleware } from "./middlewares/prisma.middleware";
+import { HonoEnv } from "./types/app";
 
 import authRouter from "./modules/auth/auth.route";
 import bookingRouter from "./modules/booking/booking.route";
@@ -8,7 +11,11 @@ import paymentRouter from "./modules/payment/payment.route";
 import adminRouter from "./modules/admin/admin.route";
 import docsRouter from "./docs/docs.route";
 
-const app = new Hono();
+const app = new Hono<HonoEnv>();
+
+// Global Middlewares
+app.use('*', logger());
+app.use('*', prismaMiddleware); // Inject Prisma into context
 
 // Documentation
 app.route("/docs", docsRouter);
@@ -23,9 +30,10 @@ app.route("/payment", paymentRouter);
 app.route("/admin", adminRouter);
 
 // Admin dashboard static files
-app.use("/admin-dashboard/*", serveStatic({ root: "./admin-dist" }));
-app.get("/admin-dashboard/*", serveStatic({ root: "./admin-dist/index.html" }));
+// app.use("/admin-dashboard/*", serveStatic({ root: "./admin-dist" }));
+// app.get("/admin-dashboard/*", serveStatic({ root: "./admin-dist/index.html" }));
 
 app.get("/", (c) => c.json({ ok: true }));
+app.get("/health", (c) => c.json({ status: "ok", timestamp: new Date().toISOString() }));
 
 export default app;

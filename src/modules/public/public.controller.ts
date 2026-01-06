@@ -1,10 +1,11 @@
 import { Context } from "hono";
-import { prisma } from "../../config/database";
+import { HonoEnv } from "../../types/app";
 
 /**
  * GET /public/routes
  */
-export async function listRoutesHandler(c: Context) {
+export async function listRoutesHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const routes = await prisma.route.findMany({
     orderBy: { createdAt: "desc" },
   });
@@ -14,7 +15,8 @@ export async function listRoutesHandler(c: Context) {
 /**
  * GET /public/buses
  */
-export async function listBusesHandler(c: Context) {
+export async function listBusesHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const buses = await prisma.bus.findMany({ orderBy: { createdAt: "desc" } });
   return c.json(buses);
 }
@@ -23,7 +25,8 @@ export async function listBusesHandler(c: Context) {
  * GET /public/trips
  * optional query: from, to, date (YYYY-MM-DD)
  */
-export async function listTripsHandler(c: Context) {
+export async function listTripsHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const q = c.req.query();
   const where: any = {};
   if (q.from) where.route = { origin: { contains: q.from } };
@@ -50,7 +53,8 @@ export async function listTripsHandler(c: Context) {
  * GET /public/trips/:id
  * Returns trip + seat layout + seat availability
  */
-export async function tripDetailHandler(c: Context) {
+export async function tripDetailHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const id = c.req.param("id");
   if (!id) return c.json({ error: "Bad request" }, 400);
 

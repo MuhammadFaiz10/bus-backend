@@ -1,0 +1,54 @@
+name: Deploy to Cloudflare Workers
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Validate Configuration
+        run: npx tsx scripts/validate-config.ts
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy -c wrangler.jsonc
+
+      # Optional: Apply D1 Migrations
+      # Uncomment if you have a valid D1 ID in wrangler.jsonc
+      # - name: Apply D1 Migrations
+      #   uses: cloudflare/wrangler-action@v3
+      #   with:
+      #     apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      #     accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      #     command: d1 migrations apply bus-db --remote -c wrangler.jsonc
+
+      - name: Verify Deployment
+        env:
+          # You might need to know the URL ahead of time or extract it from deployment output
+          # For now, we assume a standard workers.dev subdomain or custom domain
+          DEPLOY_URL: https://bus-backend.YOUR_SUBDOMAIN.workers.dev
+        run: |
+          echo "Verifying health check at $DEPLOY_URL/health"
+          # Simple check, allowed to fail if URL is not set correctly yet
+          curl -f "$DEPLOY_URL/health" || echo "⚠️ Verification failed or URL not set"

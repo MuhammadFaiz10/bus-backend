@@ -1,5 +1,5 @@
 import { Context } from "hono";
-import { prisma } from "../../config/database";
+import { HonoEnv } from "../../types/app";
 import {
   createUserSchema,
   promoteUserSchema,
@@ -10,7 +10,7 @@ import {
   createTripSchema,
   updateTripSchema,
 } from "./admin.schema";
-import crypto from "crypto";
+import crypto from "node:crypto";
 
 /**
  * Helpers
@@ -25,7 +25,8 @@ function parseDate(q: any, key: string) {
 /**
  * Revenue handlers
  */
-export async function dailyRevenueHandler(c: Context) {
+export async function dailyRevenueHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const q = c.req.query();
   const day = parseDate(q, "date") || new Date();
   const start = new Date(day);
@@ -41,7 +42,8 @@ export async function dailyRevenueHandler(c: Context) {
   return c.json({ date: start.toISOString(), revenue: res._sum.amount || 0 });
 }
 
-export async function monthlyRevenueHandler(c: Context) {
+export async function monthlyRevenueHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const q = c.req.query();
   const y = Number(q.year) || new Date().getFullYear();
   const m = Number(q.month) ? Number(q.month) - 1 : new Date().getMonth();
@@ -54,7 +56,8 @@ export async function monthlyRevenueHandler(c: Context) {
   return c.json({ year: y, month: m + 1, revenue: res._sum.amount || 0 });
 }
 
-export async function revenueByRouteHandler(c: Context) {
+export async function revenueByRouteHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const rows = await prisma.$queryRawUnsafe(`
     SELECT r.id as route_id, r.origin, r.destination, SUM(p.amount) as revenue
     FROM "Route" r
@@ -69,7 +72,8 @@ export async function revenueByRouteHandler(c: Context) {
   return c.json(rows);
 }
 
-export async function revenueByBusHandler(c: Context) {
+export async function revenueByBusHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const rows = await prisma.$queryRawUnsafe(`
     SELECT bus.id as bus_id, bus.name, bus.plate, SUM(p.amount) as revenue
     FROM "Bus" bus
@@ -87,7 +91,8 @@ export async function revenueByBusHandler(c: Context) {
  * Bookings list (paginated + filters)
  * query params: page, perPage, status, from, to, routeId, tripId
  */
-export async function paginatedBookingsHandler(c: Context) {
+export async function paginatedBookingsHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const q = c.req.query();
   const page = Number(q.page) || 1;
   const perPage = Math.min(Number(q.perPage) || 20, 100);
@@ -122,7 +127,8 @@ export async function paginatedBookingsHandler(c: Context) {
   return c.json({ page, perPage, total, data });
 }
 
-export async function bookingStatsHandler(c: Context) {
+export async function bookingStatsHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const total = await prisma.booking.count();
   const counts = await prisma.booking.groupBy({
     by: ["status"],
@@ -134,7 +140,8 @@ export async function bookingStatsHandler(c: Context) {
 /**
  * Admin user management
  */
-export async function createUserHandler(c: Context) {
+export async function createUserHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const body = await c.req.json();
   const parsed = createUserSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.issues }, 400);
@@ -157,7 +164,8 @@ export async function createUserHandler(c: Context) {
   }
 }
 
-export async function listUsersHandler(c: Context) {
+export async function listUsersHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const q = c.req.query();
   const page = Number(q.page) || 1;
   const perPage = Math.min(Number(q.perPage) || 50, 200);
@@ -172,7 +180,8 @@ export async function listUsersHandler(c: Context) {
   return c.json({ page, perPage, total, users });
 }
 
-export async function promoteUserHandler(c: Context) {
+export async function promoteUserHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const id = c.req.param("id");
   const body = await c.req.json();
 
@@ -193,7 +202,8 @@ export async function promoteUserHandler(c: Context) {
 /**
  * Bus CRUD
  */
-export async function createBusHandler(c: Context) {
+export async function createBusHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const body = await c.req.json();
   const parsed = createBusSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.issues }, 400);
@@ -206,7 +216,8 @@ export async function createBusHandler(c: Context) {
   }
 }
 
-export async function updateBusHandler(c: Context) {
+export async function updateBusHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const id = c.req.param("id");
   const body = await c.req.json();
   const parsed = updateBusSchema.safeParse(body);
@@ -223,7 +234,8 @@ export async function updateBusHandler(c: Context) {
   }
 }
 
-export async function deleteBusHandler(c: Context) {
+export async function deleteBusHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const id = c.req.param("id");
   try {
     await prisma.bus.delete({ where: { id } });
@@ -233,7 +245,8 @@ export async function deleteBusHandler(c: Context) {
   }
 }
 
-export async function listBusesHandler(c: Context) {
+export async function listBusesHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const buses = await prisma.bus.findMany({ orderBy: { createdAt: "desc" } });
   return c.json(buses);
 }
@@ -241,7 +254,8 @@ export async function listBusesHandler(c: Context) {
 /**
  * Route CRUD
  */
-export async function createRouteHandler(c: Context) {
+export async function createRouteHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const body = await c.req.json();
   const parsed = createRouteSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.issues }, 400);
@@ -254,7 +268,8 @@ export async function createRouteHandler(c: Context) {
   }
 }
 
-export async function updateRouteHandler(c: Context) {
+export async function updateRouteHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const id = c.req.param("id");
   const body = await c.req.json();
   const parsed = updateRouteSchema.safeParse(body);
@@ -271,7 +286,8 @@ export async function updateRouteHandler(c: Context) {
   }
 }
 
-export async function deleteRouteHandler(c: Context) {
+export async function deleteRouteHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const id = c.req.param("id");
   try {
     await prisma.route.delete({ where: { id } });
@@ -281,7 +297,8 @@ export async function deleteRouteHandler(c: Context) {
   }
 }
 
-export async function listRoutesHandler(c: Context) {
+export async function listRoutesHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const routes = await prisma.route.findMany({
     orderBy: { createdAt: "desc" },
   });
@@ -291,7 +308,8 @@ export async function listRoutesHandler(c: Context) {
 /**
  * Trip CRUD (create auto-generate seats option)
  */
-export async function createTripHandler(c: Context) {
+export async function createTripHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const body = await c.req.json();
   const parsed = createTripSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.issues }, 400);
@@ -332,7 +350,8 @@ export async function createTripHandler(c: Context) {
   }
 }
 
-export async function updateTripHandler(c: Context) {
+export async function updateTripHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const id = c.req.param("id");
   const body = await c.req.json();
   const parsed = updateTripSchema.safeParse(body);
@@ -357,7 +376,8 @@ export async function updateTripHandler(c: Context) {
   }
 }
 
-export async function deleteTripHandler(c: Context) {
+export async function deleteTripHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const id = c.req.param("id");
   try {
     await prisma.trip.delete({ where: { id } });
@@ -367,7 +387,8 @@ export async function deleteTripHandler(c: Context) {
   }
 }
 
-export async function listTripsHandler(c: Context) {
+export async function listTripsHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const q = c.req.query();
   const trips = await prisma.trip.findMany({
     include: { bus: true, route: true, seats: true },

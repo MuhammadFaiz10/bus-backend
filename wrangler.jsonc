@@ -1,0 +1,38 @@
+{
+	// The name of your worker
+	"name": "bus-backend",
+	// The entry point of your worker
+	"main": "src/worker.ts",
+	// Cloudflare Workers compatibility date
+	// Always use the current date or a recent date to get the latest fixes
+	"compatibility_date": "2024-09-23",
+	// Compatibility flags enable new features
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	// Bindings allow your worker to interact with other Cloudflare resources
+	// D1 Database Binding
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "bus-db",
+			"database_id": "ecafbbb3-e3b2-4e01-83cd-66df891c7df1"
+		},
+		{
+			"binding": "bus_db",
+			"database_name": "bus-db",
+			"database_id": "ecafbbb3-e3b2-4e01-83cd-66df891c7df1",
+			"remote": true
+		}
+	],
+	// Environment variables
+	// Sensitive variables like JWT_SECRET should be set via `wrangler secret put`
+	"vars": {
+		"ENVIRONMENT": "production"
+	},
+	// Observability settings
+	"observability": {
+		"enabled": true,
+		"head_sampling_rate": 1 // Sample 100% of requests for tracing
+	}
+}

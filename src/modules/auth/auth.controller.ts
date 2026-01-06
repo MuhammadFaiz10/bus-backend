@@ -1,8 +1,8 @@
 import type { Context } from "hono";
 import { z } from "zod";
-import { prisma } from "../../config/database";
+import { HonoEnv } from "../../types/app";
 import { signJwt } from "../../utils/jwt";
-import crypto from "crypto";
+import crypto from "node:crypto";
 
 const registerSchema = z.object({
   name: z.string(),
@@ -26,7 +26,8 @@ function hashPassword(pw: string) {
   return crypto.createHash("sha256").update(pw).digest("hex");
 }
 
-export async function registerHandler(c: Context) {
+export async function registerHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const body = await c.req.json();
   const parsed = registerSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.issues }, 400);
@@ -49,7 +50,8 @@ export async function registerHandler(c: Context) {
   });
 }
 
-export async function loginHandler(c: Context) {
+export async function loginHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const body = await c.req.json();
   const parsed = loginSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.issues }, 400);

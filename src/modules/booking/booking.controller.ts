@@ -1,8 +1,9 @@
 import { Context } from "hono";
-import { prisma } from "../../config/database";
+import { HonoEnv } from "../../types/app";
 import { createBookingSchema } from "./booking.schema";
 
-export async function createBookingHandler(c: Context) {
+export async function createBookingHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const body = await c.req.json();
   const parsed = createBookingSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.issues }, 400);
@@ -16,14 +17,16 @@ export async function createBookingHandler(c: Context) {
 
   try {
     const booking = await prisma.$transaction(async (tx) => {
-      // Lock seats FOR UPDATE (matching tripId + seatCode and isBooked = false)
-      const seats = await tx.$queryRawUnsafe(
-        `SELECT * FROM "Seat" WHERE "tripId" = $1 AND "seatCode" = ANY($2) AND "isBooked" = false FOR UPDATE`,
-        tripId,
-        seatCodes
-      );
+      // Replaced Raw SQL with Prisma for SQLite compatibility
+      const seats = await tx.seat.findMany({
+        where: {
+          tripId,
+          seatCode: { in: seatCodes },
+          isBooked: false,
+        },
+      });
 
-      if ((seats as any[]).length !== seatCodes.length)
+      if (seats.length !== seatCodes.length)
         throw new Error("Some seats are already taken");
 
       const b = await tx.booking.create({
@@ -36,11 +39,41 @@ export async function createBookingHandler(c: Context) {
         },
       });
 
-      for (const s of seats as any[]) {
+      for (const s of seats) {
         await tx.bookingSeat.create({
           data: { bookingId: b.id, seatId: s.id },
         });
+        // We should probably mark seat as booked here if the schema implies it, 
+        // but the original code didn't update 'isBooked' to true?
+        // Wait, original code:
+        /*
+          // Lock seats FOR UPDATE
+          const seats = await tx.$queryRawUnsafe(...)
+          ...
+          // It creates BookingSeat.
+          // Does it update Seat.isBooked?
+        */
+        // Looking at original code, it creates BookingSeat. 
+        // But cancel handler updates `isBooked: false`. 
+        // The create handler MISSING `isBooked: true` update in the original code?
+        // Let's look at `cancelBookingHandler`:
+        // await tx.seat.updateMany({ where: { id: { in: seatIds } }, data: { isBooked: false } });
+        // This implies seats SHOULD be marked isBooked = true when booked.
+        // The original code seemingly missed this or I missed it in the read?
+        // Let's check `booking.controller.ts` original read again.
+        // It does NOT show `tx.seat.update(...)` in `createBookingHandler`.
+        // This looks like a BUG in the original code or logic handled via `BookingSeat` existence?
+        // But `cancel` explicitly sets `isBooked: false`.
+        // `seat.generator` sets `isBooked: false` default.
+        // If `isBooked` is never set to true, then `SELECT ... AND isBooked = false` always returns true.
+        // I should probably fix this by setting `isBooked: true`.
       }
+      
+      // FIX: Mark seats as booked
+      await tx.seat.updateMany({
+        where: { id: { in: seats.map(s => s.id) } },
+        data: { isBooked: true }
+      });
 
       await tx.payment.create({
         data: { bookingId: b.id, orderId: `BOOK-${b.id}`, amount: totalPrice },
@@ -61,7 +94,8 @@ export async function createBookingHandler(c: Context) {
 /**
  * GET /booking/me
  */
-export async function getMyBookingsHandler(c: Context) {
+export async function getMyBookingsHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const user = (c as any).user;
   const q = c.req.query();
   const page = Number(q.page) || 1;
@@ -88,7 +122,8 @@ export async function getMyBookingsHandler(c: Context) {
 /**
  * GET /booking/me/upcoming
  */
-export async function upcomingBookingsHandler(c: Context) {
+export async function upcomingBookingsHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const user = (c as any).user;
   const now = new Date();
   const data = await prisma.booking.findMany({
@@ -110,7 +145,8 @@ export async function upcomingBookingsHandler(c: Context) {
 /**
  * GET /booking/:id
  */
-export async function getBookingDetailHandler(c: Context) {
+export async function getBookingDetailHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const id = c.req.param("id");
   const booking = await prisma.booking.findUnique({
     where: { id },
@@ -129,7 +165,8 @@ export async function getBookingDetailHandler(c: Context) {
  * POST /booking/:id/cancel
  * Only allow cancel if status is PENDING (or we can allow other policies)
  */
-export async function cancelBookingHandler(c: Context) {
+export async function cancelBookingHandler(c: Context<HonoEnv>) {
+  const prisma = c.get('prisma');
   const id = c.req.param("id");
   const booking = await prisma.booking.findUnique({
     where: { id },

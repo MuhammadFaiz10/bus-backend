@@ -1,6 +1,7 @@
-import { prisma } from "../../config/database";
+import { PrismaClient } from "@prisma/client";
 
 export async function generateSeatsForTrip(
+  prisma: PrismaClient,
   tripId: string,
   layout: { rows: number; cols: number; prefix?: string } = {
     rows: 10,

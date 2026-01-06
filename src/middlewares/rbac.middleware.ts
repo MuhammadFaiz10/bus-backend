@@ -1,11 +1,11 @@
 import type { Context, Next } from "hono";
-import { prisma } from "../config/database";
+import { HonoEnv } from "../types/app";
 
 /**
  * requireRole: require a role (ADMIN or USER)
  */
 export function requireRole(role: "ADMIN" | "USER") {
-  return async (c: Context, next: Next) => {
+  return async (c: Context<HonoEnv>, next: Next) => {
     const user = (c as any).user;
     if (!user) return c.json({ error: "Unauthorized" }, 401);
     if (user.role !== role && user.role !== "ADMIN")
@@ -21,7 +21,7 @@ export function requireRole(role: "ADMIN" | "USER") {
  * It assumes resource has userId field (booking.userId)
  */
 export function requireOwner(resource: "booking", paramName = "id") {
-  return async (c: Context, next: Next) => {
+  return async (c: Context<HonoEnv>, next: Next) => {
     const user = (c as any).user;
     if (!user) return c.json({ error: "Unauthorized" }, 401);
 
@@ -33,6 +33,8 @@ export function requireOwner(resource: "booking", paramName = "id") {
       await next();
       return;
     }
+
+    const prisma = c.get('prisma');
 
     if (resource === "booking") {
       const booking = await prisma.booking.findUnique({ where: { id } });

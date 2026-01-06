@@ -1,14 +1,2615 @@
 import { Hono } from "hono";
-import fs from "fs";
-import path from "path";
 
 const docs = new Hono();
 
+const openApiYaml = `openapi: 3.1.0
+info:
+  title: Bus Ticketing API
+  version: 1.0.0
+  description: |
+    # Bus Ticketing System API Documentation
+
+    Complete REST API for managing bus ticket bookings, payments, and administrative operations.
+
+    ## Overview
+
+    This API provides a comprehensive bus ticketing platform with the following features:
+
+    - **User Authentication**: JWT-based registration and login with role-based access control (ADMIN/USER)
+    - **Public Trip Search**: Browse available trips with filtering by origin, destination, and date
+    - **Real-time Seat Management**: View seat availability and book specific seats
+    - **Secure Booking System**: Create bookings with automatic seat locking and 15-minute payment expiry
+    - **Payment Integration**: Midtrans payment gateway integration with webhook support
+    - **Admin Dashboard**: Complete CRUD operations for buses, routes, trips, users, and bookings
+    - **Revenue Analytics**: Daily, monthly, route-based, and bus-based revenue reports
+
+    ## Technology Stack
+
+    - **Framework**: Hono.js (Fast edge-ready web framework)
+    - **Database**: PostgreSQL with Prisma ORM
+    - **Authentication**: JWT Bearer tokens
+    - **Payment Gateway**: Midtrans
+    - **Validation**: Zod schemas
+
+    ## Authentication
+
+    Most endpoints require JWT authentication. To authenticate:
+
+    1. Register via \`POST /auth/register\` or login via \`POST /auth/login\`
+    2. Copy the returned \`token\` value
+    3. Add to request headers: \`Authorization: Bearer <your-token>\`
+
+    Public endpoints (marked with no security requirement) can be accessed without authentication.
+
+    ## Business Logic
+
+    ### Booking Flow
+    1. User searches for trips via \`GET /public/trips\`
+    2. User views trip details and seat availability via \`GET /public/trips/{id}\`
+    3. User creates booking with selected seats via \`POST /booking\`
+    4. System locks seats and sets 15-minute expiry timer
+    5. User initiates payment via \`POST /payment/create\`
+    6. Midtrans processes payment and sends webhook to \`POST /payment/midtrans/webhook\`
+    7. System confirms booking and unlocks or releases seats based on payment status
+
+    ### Booking Status Lifecycle
+    - **PENDING**: Initial state after booking creation, awaiting payment
+    - **PAID**: Payment received via webhook, awaiting final confirmation
+    - **CONFIRMED**: Booking confirmed and valid for travel
+    - **EXPIRED**: Payment deadline (15 minutes) passed without payment
+    - **CANCELLED**: Manually cancelled by user or admin
+
+    ## Rate Limits & Constraints
+    - Maximum 100 seats per booking request
+    - Booking expires 15 minutes after creation if unpaid
+    - Pagination: Max 100 items per page (booking endpoints), 200 items per page (user endpoints)
+
+  contact:
+    name: API Support
+    email: support@example.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:3000
+    description: Development server
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from /auth/login or /auth/register
+
+  schemas:
+    User:
+      type: object
+      description: User account information (password excluded from responses)
+      required:
+        - id
+        - name
+        - email
+        - role
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique user identifier
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        name:
+          type: string
+          description: Full name of the user
+          minLength: 1
+          maxLength: 255
+          example: "John Doe"
+        email:
+          type: string
+          format: email
+          description: User email address (must be unique)
+          example: "john.doe@example.com"
+        role:
+          type: string
+          enum: [ADMIN, USER]
+          description: User role determining access permissions
+          example: "USER"
+        createdAt:
+          type: string
+          format: date-time
+          description: Account creation timestamp
+          example: "2024-01-15T10:30:00Z"
+
+    Bus:
+      type: object
+      description: Bus/vehicle information for trips
+      required:
+        - id
+        - name
+        - plate
+        - totalSeat
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique bus identifier
+          example: "450e8400-e29b-41d4-a716-446655440001"
+        name:
+          type: string
+          description: Bus name or identifier
+          minLength: 1
+          maxLength: 255
+          example: "Bus Ekonomi Premium 1"
+        plate:
+          type: string
+          description: Vehicle license plate number
+          minLength: 1
+          maxLength: 50
+          example: "B 1234 XYZ"
+        totalSeat:
+          type: integer
+          description: Total seating capacity
+          minimum: 1
+          maximum: 100
+          example: 40
+        createdAt:
+          type: string
+          format: date-time
+          description: Bus record creation timestamp
+          example: "2024-01-10T08:00:00Z"
+
+    Route:
+      type: object
+      description: Travel route between two cities/locations
+      required:
+        - id
+        - origin
+        - destination
+        - distanceKm
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique route identifier
+          example: "650e8400-e29b-41d4-a716-446655440002"
+        origin:
+          type: string
+          description: Departure city/location
+          minLength: 1
+          maxLength: 255
+          example: "Jakarta"
+        destination:
+          type: string
+          description: Arrival city/location
+          minLength: 1
+          maxLength: 255
+          example: "Bandung"
+        distanceKm:
+          type: integer
+          description: Distance in kilometers
+          minimum: 1
+          example: 150
+        createdAt:
+          type: string
+          format: date-time
+          description: Route record creation timestamp
+          example: "2024-01-05T09:00:00Z"
+
+    Trip:
+      type: object
+      description: Scheduled bus trip on a specific route
+      required:
+        - id
+        - busId
+        - routeId
+        - departureTime
+        - arrivalTime
+        - price
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique trip identifier
+          example: "750e8400-e29b-41d4-a716-446655440003"
+        busId:
+          type: string
+          format: uuid
+          description: Associated bus ID
+          example: "450e8400-e29b-41d4-a716-446655440001"
+        routeId:
+          type: string
+          format: uuid
+          description: Associated route ID
+          example: "650e8400-e29b-41d4-a716-446655440002"
+        departureTime:
+          type: string
+          format: date-time
+          description: Scheduled departure date and time (ISO 8601)
+          example: "2024-01-20T08:00:00Z"
+        arrivalTime:
+          type: string
+          format: date-time
+          description: Scheduled arrival date and time (ISO 8601)
+          example: "2024-01-20T12:00:00Z"
+        price:
+          type: integer
+          description: Ticket price per seat in smallest currency unit (e.g., Rupiah)
+          minimum: 0
+          example: 150000
+        createdAt:
+          type: string
+          format: date-time
+          description: Trip record creation timestamp
+          example: "2024-01-15T10:00:00Z"
+        bus:
+          $ref: "#/components/schemas/Bus"
+        route:
+          $ref: "#/components/schemas/Route"
+
+    Booking:
+      type: object
+      description: Bus ticket booking/reservation
+      required:
+        - id
+        - userId
+        - tripId
+        - status
+        - totalPrice
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique booking identifier
+          example: "850e8400-e29b-41d4-a716-446655440004"
+        userId:
+          type: string
+          format: uuid
+          description: User who made the booking
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        tripId:
+          type: string
+          format: uuid
+          description: Booked trip ID
+          example: "750e8400-e29b-41d4-a716-446655440003"
+        status:
+          type: string
+          enum: [PENDING, PAID, CONFIRMED, EXPIRED, CANCELLED]
+          description: |
+            Booking status:
+            - PENDING: Created, awaiting payment
+            - PAID: Payment received
+            - CONFIRMED: Confirmed for travel
+            - EXPIRED: Payment deadline passed
+            - CANCELLED: Cancelled by user/admin
+          example: "PENDING"
+        totalPrice:
+          type: integer
+          description: Total booking price (price per seat × number of seats)
+          minimum: 0
+          example: 300000
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Payment expiration time (typically 15 minutes from creation)
+          example: "2024-01-20T09:15:00Z"
+        createdAt:
+          type: string
+          format: date-time
+          description: Booking creation timestamp
+          example: "2024-01-20T09:00:00Z"
+
+    Payment:
+      type: object
+      description: Payment transaction record (Midtrans integration)
+      required:
+        - id
+        - bookingId
+        - orderId
+        - amount
+        - status
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique payment identifier
+          example: "950e8400-e29b-41d4-a716-446655440005"
+        bookingId:
+          type: string
+          format: uuid
+          description: Associated booking ID
+          example: "850e8400-e29b-41d4-a716-446655440004"
+        orderId:
+          type: string
+          description: "Unique order ID sent to Midtrans (format: BOOK-{bookingId}-{timestamp})"
+          example: "BOOK-850e8400-1705748400000"
+        transactionId:
+          type: string
+          nullable: true
+          description: Midtrans transaction ID (available after payment processing)
+          example: "c2e8bc89-9e1c-4c5e-bd57-3f8d5a6e7b8c"
+        amount:
+          type: integer
+          description: Payment amount in smallest currency unit
+          minimum: 0
+          example: 300000
+        status:
+          type: string
+          enum: [PENDING, PAID, FAILED]
+          description: |
+            Payment status:
+            - PENDING: Payment initiated, awaiting completion
+            - PAID: Payment successful
+            - FAILED: Payment failed or cancelled
+          example: "PENDING"
+        rawResponse:
+          type: object
+          nullable: true
+          description: Raw response from Midtrans API (stored for debugging/reconciliation)
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+          description: Payment record creation timestamp
+          example: "2024-01-20T09:01:00Z"
+
+    Seat:
+      type: object
+      description: Individual seat within a trip
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique seat identifier
+        tripId:
+          type: string
+          format: uuid
+          description: Associated trip ID
+        seatCode:
+          type: string
+          description: Seat code (e.g., A1, B2, C3)
+          example: "A1"
+        isBooked:
+          type: boolean
+          description: Whether the seat is currently booked
+          example: false
+        createdAt:
+          type: string
+          format: date-time
+
+    BookingSeat:
+      type: object
+      description: Junction table linking bookings to seats
+      properties:
+        id:
+          type: string
+          format: uuid
+        bookingId:
+          type: string
+          format: uuid
+        seatId:
+          type: string
+          format: uuid
+        seat:
+          $ref: "#/components/schemas/Seat"
+
+    BookingDetailed:
+      type: object
+      description: Detailed booking information with all relations
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        tripId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [PENDING, PAID, CONFIRMED, EXPIRED, CANCELLED]
+          description: |
+            - PENDING: Booking created, awaiting payment
+            - PAID: Payment received, awaiting confirmation
+            - CONFIRMED: Booking confirmed and valid for travel
+            - EXPIRED: Booking expired due to payment timeout
+            - CANCELLED: Booking cancelled by user or admin
+        totalPrice:
+          type: integer
+          description: Total price in smallest currency unit (e.g., cents for IDR)
+          example: 300000
+        expiresAt:
+          type: string
+          format: date-time
+          description: Payment expiration time (typically 15 minutes after creation)
+        createdAt:
+          type: string
+          format: date-time
+        user:
+          $ref: "#/components/schemas/User"
+        trip:
+          $ref: "#/components/schemas/Trip"
+        seats:
+          type: array
+          items:
+            $ref: "#/components/schemas/BookingSeat"
+        payment:
+          $ref: "#/components/schemas/Payment"
+
+    PaginatedResponse:
+      type: object
+      description: Generic paginated response wrapper
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        perPage:
+          type: integer
+          description: Items per page
+          example: 20
+        total:
+          type: integer
+          description: Total number of items across all pages
+          example: 156
+        data:
+          type: array
+          description: Array of items for current page
+          items:
+            type: object
+
+    AuthResponse:
+      type: object
+      description: Authentication response with JWT token and user info
+      properties:
+        token:
+          type: string
+          description: JWT Bearer token for authentication
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        user:
+          type: object
+          description: Authenticated user information (password excluded)
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+              example: "John Doe"
+            email:
+              type: string
+              format: email
+              example: "john@example.com"
+            role:
+              type: string
+              enum: [ADMIN, USER]
+              example: "USER"
+
+    # ==================
+    # ERROR RESPONSES
+    # ==================
+
+    ValidationError:
+      type: object
+      description: Returned when request validation fails (Zod schema validation)
+      properties:
+        error:
+          type: string
+          description: Error message describing the validation failure
+          example: "Validation failed"
+        details:
+          type: array
+          description: Array of validation errors with field paths and messages
+          items:
+            type: object
+            properties:
+              path:
+                type: array
+                items:
+                  type: string
+                description: Path to the field that failed validation
+                example: ["email"]
+              message:
+                type: string
+                description: Validation error message
+                example: "Invalid email format"
+
+    BusinessLogicError:
+      type: object
+      description: Returned when business logic validation fails
+      properties:
+        error:
+          type: string
+          description: Error message describing the business logic failure
+          example: "Seat A1 is already booked"
+
+    UnauthorizedError:
+      type: object
+      description: Returned when authentication is required but not provided or invalid
+      properties:
+        error:
+          type: string
+          description: Authentication error message
+          example: "Unauthorized - Invalid or missing token"
+
+    ForbiddenError:
+      type: object
+      description: Returned when user lacks required permissions (e.g., ADMIN role required)
+      properties:
+        error:
+          type: string
+          description: Permission error message
+          example: "Forbidden - Admin access required"
+
+    NotFoundError:
+      type: object
+      description: Returned when requested resource is not found
+      properties:
+        error:
+          type: string
+          description: Not found error message
+          example: "Resource not found"
+
+    InternalServerError:
+      type: object
+      description: Returned when an unexpected server error occurs
+      properties:
+        error:
+          type: string
+          description: Internal error message
+          example: "Internal server error"
+
+    Error:
+      type: object
+      description: Generic error response (deprecated - use specific error types above)
+      properties:
+        error:
+          type: string
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Auth
+    description: |
+      User authentication endpoints for registration and login.
+      Returns JWT tokens for authenticated access to protected endpoints.
+      No authentication required for these endpoints.
+
+  - name: Public
+    description: |
+      Public endpoints accessible without authentication.
+      Allows browsing available routes, buses, and trips.
+      Ideal for displaying trip search results to unauthenticated users.
+
+  - name: Booking
+    description: |
+      User booking management endpoints (requires authentication).
+      Create bookings, view personal bookings, and cancel pending bookings.
+      Bookings automatically expire 15 minutes after creation if unpaid.
+
+  - name: Payment
+    description: |
+      Payment processing endpoints using Midtrans payment gateway.
+      Create payment transactions and receive webhook notifications.
+      Webhook endpoint should be configured in Midtrans dashboard.
+
+  - name: Admin - Revenue
+    description: |
+      Revenue analytics and reporting endpoints (ADMIN role required).
+      View daily/monthly revenue totals and breakdowns by route or bus.
+      Useful for financial reporting and business intelligence.
+
+  - name: Admin - Bookings
+    description: |
+      Admin booking management endpoints (ADMIN role required).
+      View all bookings with filtering, pagination, and statistics.
+      Monitor booking trends and statuses across the system.
+
+  - name: Admin - Users
+    description: |
+      User management endpoints (ADMIN role required).
+      Create users, list all users, and promote/demote user roles.
+      Manage system access and permissions.
+
+  - name: Admin - Buses
+    description: |
+      Bus fleet management endpoints (ADMIN role required).
+      Create, update, delete, and list buses in the system.
+      Manage vehicle inventory and seating capacity.
+
+  - name: Admin - Routes
+    description: |
+      Route management endpoints (ADMIN role required).
+      Create, update, delete, and list travel routes.
+      Define origin, destination, and distance for each route.
+
+  - name: Admin - Trips
+    description: |
+      Trip scheduling endpoints (ADMIN role required).
+      Create, update, delete, and list scheduled trips.
+      Configure departure/arrival times, pricing, and automatic seat generation.
+
+paths:
+  /auth/register:
+    post:
+      summary: Register new user account
+      tags: [Auth]
+      security: []
+      description: |
+        Create a new user account with email and password.
+        Returns a JWT token that can be immediately used for authentication.
+        User role defaults to \`USER\` - use admin endpoints to promote to \`ADMIN\` role.
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name:
+                  type: string
+                  description: Full name of the user
+                  minLength: 1
+                  example: "John Doe"
+                email:
+                  type: string
+                  format: email
+                  description: Valid email address (must be unique)
+                  example: "john.doe@example.com"
+                password:
+                  type: string
+                  format: password
+                  minLength: 6
+                  description: Password (minimum 6 characters)
+                  example: "securePass123"
+            examples:
+              validRequest:
+                summary: Valid registration request
+                value:
+                  name: "Alice Johnson"
+                  email: "alice.johnson@example.com"
+                  password: "mySecurePassword"
+              minimalRequest:
+                summary: Minimal valid request
+                value:
+                  name: "Bob"
+                  email: "bob@test.com"
+                  password: "123456"
+
+      responses:
+        "200":
+          description: Registration successful - returns JWT token and user info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+              examples:
+                successfulRegistration:
+                  summary: Successful registration
+                  value:
+                    token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJlbWFpbCI6ImFsaWNlLmpvaG5zb25AZXhhbXBsZS5jb20iLCJyb2xlIjoiVVNFUiIsImlhdCI6MTcwNTc0ODQwMH0.abcd1234"
+                    user:
+                      id: "550e8400-e29b-41d4-a716-446655440000"
+                      name: "Alice Johnson"
+                      email: "alice.johnson@example.com"
+
+        "400":
+          description: Validation error or email already registered
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/BusinessLogicError"
+              examples:
+                validationError:
+                  summary: Validation error - invalid email format
+                  value:
+                    error: "Validation failed"
+                    details:
+                      - path: ["email"]
+                        message: "Invalid email"
+                passwordTooShort:
+                  summary: Validation error - password too short
+                  value:
+                    error: "Validation failed"
+                    details:
+                      - path: ["password"]
+                        message: "String must contain at least 6 character(s)"
+                emailAlreadyExists:
+                  summary: Business logic error - email already registered
+                  value:
+                    error: "Email already registered"
+                multipleValidationErrors:
+                  summary: Multiple validation errors
+                  value:
+                    error: "Validation failed"
+                    details:
+                      - path: ["name"]
+                        message: "Required"
+                      - path: ["email"]
+                        message: "Invalid email"
+                      - path: ["password"]
+                        message: "String must contain at least 6 character(s)"
+
+  /auth/login:
+    post:
+      summary: Authenticate user and get JWT token
+      tags: [Auth]
+      security: []
+      description: |
+        Authenticate with email and password to receive a JWT token.
+        The returned token should be included in the \`Authorization\` header for protected endpoints:
+        \`\`\`
+        Authorization: Bearer <your-token>
+        \`\`\`
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: Registered email address
+                  example: "alice.johnson@example.com"
+                password:
+                  type: string
+                  format: password
+                  description: Account password
+                  example: "mySecurePassword"
+            examples:
+              userLogin:
+                summary: Regular user login
+                value:
+                  email: "alice.johnson@example.com"
+                  password: "mySecurePassword"
+              adminLogin:
+                summary: Admin user login
+                value:
+                  email: "admin@example.com"
+                  password: "adminPassword"
+
+      responses:
+        "200":
+          description: Login successful - returns JWT token and user info with role
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+              examples:
+                userLoginSuccess:
+                  summary: Successful user login
+                  value:
+                    token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJlbWFpbCI6ImFsaWNlLmpvaG5zb25AZXhhbXBsZS5jb20iLCJyb2xlIjoiVVNFUiIsImlhdCI6MTcwNTc0ODQwMH0.xyz789"
+                    user:
+                      id: "550e8400-e29b-41d4-a716-446655440000"
+                      name: "Alice Johnson"
+                      email: "alice.johnson@example.com"
+                      role: "USER"
+                adminLoginSuccess:
+                  summary: Successful admin login
+                  value:
+                    token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2NjBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDEiLCJlbWFpbCI6ImFkbWluQGV4YW1wbGUuY29tIiwicm9sZSI6IkFETUlOIiwiaWF0IjoxNzA1NzQ4NDAwfQ.abc123"
+                    user:
+                      id: "660e8400-e29b-41d4-a716-446655440001"
+                      name: "Admin User"
+                      email: "admin@example.com"
+                      role: "ADMIN"
+
+        "400":
+          description: Validation error - invalid request format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+              examples:
+                invalidEmail:
+                  summary: Invalid email format
+                  value:
+                    error: "Validation failed"
+                    details:
+                      - path: ["email"]
+                        message: "Invalid email"
+                missingFields:
+                  summary: Missing required fields
+                  value:
+                    error: "Validation failed"
+                    details:
+                      - path: ["email"]
+                        message: "Required"
+                      - path: ["password"]
+                        message: "Required"
+
+        "401":
+          description: Invalid credentials - email not found or password incorrect
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnauthorizedError"
+              examples:
+                invalidCredentials:
+                  summary: Wrong email or password
+                  value:
+                    error: "Invalid credentials"
+
+  /booking:
+    post:
+      summary: Create new booking with seat selection
+      tags: [Booking]
+      description: |
+        Create a booking for a specific trip with selected seats.
+
+        **Important notes:**
+        - Seats are locked during transaction to prevent double-booking
+        - Booking automatically expires after 15 minutes if payment is not completed
+        - Payment record is automatically created with status PENDING
+        - Must be authenticated (USER or ADMIN role)
+
+        **Booking expiry flow:**
+        1. Booking created with status PENDING and expiresAt = now + 15 minutes
+        2. User has 15 minutes to complete payment via POST /payment/create
+        3. If payment received before expiry, booking moves to PAID/CONFIRMED
+        4. If expiry time passes without payment, booking automatically marked EXPIRED
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tripId, seatCodes]
+              properties:
+                tripId:
+                  type: string
+                  format: uuid
+                  description: ID of the trip to book
+                  example: "750e8400-e29b-41d4-a716-446655440003"
+                seatCodes:
+                  type: array
+                  items:
+                    type: string
+                  minItems: 1
+                  description: Array of seat codes to book (e.g., ["A1", "A2"])
+                  example: ["A1", "A2"]
+            examples:
+              singleSeat:
+                summary: Book single seat
+                value:
+                  tripId: "750e8400-e29b-41d4-a716-446655440003"
+                  seatCodes: ["B5"]
+              multipleSeats:
+                summary: Book multiple seats
+                value:
+                  tripId: "750e8400-e29b-41d4-a716-446655440003"
+                  seatCodes: ["A1", "A2", "A3"]
+
+      responses:
+        "200":
+          description: Booking created successfully - proceed to payment
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  booking:
+                    $ref: "#/components/schemas/Booking"
+                  message:
+                    type: string
+                    example: "Booking created. Please proceed to payment."
+              examples:
+                successfulBooking:
+                  summary: Successful booking creation
+                  value:
+                    booking:
+                      id: "850e8400-e29b-41d4-a716-446655440004"
+                      userId: "550e8400-e29b-41d4-a716-446655440000"
+                      tripId: "750e8400-e29b-41d4-a716-446655440003"
+                      status: "PENDING"
+                      totalPrice: 300000
+                      expiresAt: "2024-01-20T09:15:00Z"
+                      createdAt: "2024-01-20T09:00:00Z"
+                    message: "Booking created. Please proceed to payment."
+
+        "400":
+          description: Validation error or seats unavailable
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/BusinessLogicError"
+              examples:
+                validationError:
+                  summary: Validation error - invalid UUID
+                  value:
+                    error: "Validation failed"
+                    details:
+                      - path: ["tripId"]
+                        message: "Invalid uuid"
+                emptySeatCodes:
+                  summary: Validation error - empty seat array
+                  value:
+                    error: "Validation failed"
+                    details:
+                      - path: ["seatCodes"]
+                        message: "Array must contain at least 1 element(s)"
+                seatsAlreadyTaken:
+                  summary: Business logic error - seats already booked
+                  value:
+                    error: "Some seats are already taken"
+                transactionError:
+                  summary: Generic transaction error
+                  value:
+                    error: "Cannot create booking"
+
+        "401":
+          description: Unauthorized - authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnauthorizedError"
+              examples:
+                missingToken:
+                  summary: No authentication token provided
+                  value:
+                    error: "Unauthorized - Invalid or missing token"
+
+        "404":
+          description: Trip not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundError"
+              examples:
+                tripNotFound:
+                  summary: Trip does not exist
+                  value:
+                    error: "Trip not found"
+
+  /payment/create:
+    post:
+      summary: Initialize Midtrans payment transaction
+      tags: [Payment]
+      description: |
+        Create a Midtrans payment transaction for a pending booking.
+
+        **Payment flow:**
+        1. User creates booking via POST /booking (status: PENDING)
+        2. User calls this endpoint to initiate payment
+        3. Midtrans returns payment URL and token
+        4. User completes payment on Midtrans page
+        5. Midtrans sends webhook to POST /payment/midtrans/webhook
+        6. Booking status updated to CONFIRMED, seats marked as booked
+
+        **Requirements:**
+        - Booking must belong to authenticated user
+        - Booking status must be PENDING
+        - Booking must not be expired
+
+        **Response contains:**
+        - Midtrans Snap token for payment page
+        - Payment URL to redirect user
+        - Transaction details
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bookingId]
+              properties:
+                bookingId:
+                  type: string
+                  format: uuid
+                  description: ID of the pending booking to pay for
+                  example: "850e8400-e29b-41d4-a716-446655440004"
+            examples:
+              validRequest:
+                summary: Create payment for booking
+                value:
+                  bookingId: "850e8400-e29b-41d4-a716-446655440004"
+
+      responses:
+        "200":
+          description: Payment transaction created successfully - returns Midtrans response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  payment:
+                    type: object
+                    description: Midtrans transaction response object
+                    properties:
+                      token:
+                        type: string
+                        description: Snap token for payment page
+                      redirect_url:
+                        type: string
+                        description: URL to redirect user for payment
+                    additionalProperties: true
+              examples:
+                successfulPayment:
+                  summary: Midtrans transaction created
+                  value:
+                    payment:
+                      token: "66e4fa55-fdac-4ef9-91b5-733b97d1b862"
+                      redirect_url: "https://app.sandbox.midtrans.com/snap/v3/redirection/66e4fa55-fdac-4ef9-91b5-733b97d1b862"
+                      status_code: "201"
+                      status_message: "Success, Snap transaction is created"
+
+        "400":
+          description: Booking not in PENDING status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessLogicError"
+              examples:
+                bookingNotPending:
+                  summary: Booking already paid or expired
+                  value:
+                    error: "Booking is not pending"
+
+        "401":
+          description: Unauthorized - authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnauthorizedError"
+              examples:
+                missingToken:
+                  summary: No authentication token
+                  value:
+                    error: "Unauthorized - Invalid or missing token"
+
+        "403":
+          description: Forbidden - user does not own this booking
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForbiddenError"
+              examples:
+                notBookingOwner:
+                  summary: Attempting to pay for another user's booking
+                  value:
+                    error: "Forbidden"
+
+        "404":
+          description: Booking not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundError"
+              examples:
+                bookingNotFound:
+                  summary: Invalid booking ID
+                  value:
+                    error: "Booking not found"
+
+  /payment/midtrans/webhook:
+    post:
+      summary: Midtrans payment webhook endpoint
+      tags: [Payment]
+      security: []
+      description: |
+        Receives payment status notifications from Midtrans payment gateway.
+
+        **This endpoint is called by Midtrans, not by the frontend.**
+
+        **Configuration:**
+        - Set this URL in Midtrans Dashboard → Settings → Configuration → Payment Notification URL
+        - Example: \`https://yourdomain.com/payment/midtrans/webhook\`
+        - No authentication required (Midtrans does not send Authorization header)
+
+        **Transaction status handling:**
+        - \`settlement\` or \`capture\`: Payment successful
+          - Payment status → PAID
+          - Booking status → CONFIRMED
+          - Seats marked as booked (isBooked = true)
+        - \`deny\`, \`cancel\`, or \`expire\`: Payment failed/cancelled
+          - Payment status → FAILED
+          - Booking status → EXPIRED
+        - Other statuses: Stored but not processed
+
+        **Automatic booking confirmation:**
+        When payment succeeds, the system automatically:
+        1. Updates payment record with transaction ID
+        2. Confirms the booking
+        3. Permanently locks the booked seats
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - order_id
+                - transaction_status
+              properties:
+                order_id:
+                  type: string
+                  description: "Order ID from our system (format: BOOK-{bookingId})"
+                  example: "BOOK-850e8400-1705748400000"
+                transaction_id:
+                  type: string
+                  description: Midtrans transaction ID
+                  example: "c2e8bc89-9e1c-4c5e-bd57-3f8d5a6e7b8c"
+                transaction_status:
+                  type: string
+                  description: Payment transaction status from Midtrans
+                  enum: [capture, settlement, pending, deny, cancel, expire, failure]
+                  example: "settlement"
+                fraud_status:
+                  type: string
+                  description: Fraud detection status
+                  enum: [accept, challenge, deny]
+                payment_type:
+                  type: string
+                  description: Payment method used
+                  example: "credit_card"
+                gross_amount:
+                  type: string
+                  description: Transaction amount
+                  example: "300000.00"
+              additionalProperties: true
+            examples:
+              successfulPayment:
+                summary: Payment successful (settlement)
+                value:
+                  order_id: "BOOK-850e8400-1705748400000"
+                  transaction_id: "c2e8bc89-9e1c-4c5e-bd57-3f8d5a6e7b8c"
+                  transaction_status: "settlement"
+                  fraud_status: "accept"
+                  payment_type: "credit_card"
+                  gross_amount: "300000.00"
+                  transaction_time: "2024-01-20 09:05:00"
+              paymentCancelled:
+                summary: Payment cancelled by user
+                value:
+                  order_id: "BOOK-850e8400-1705748400000"
+                  transaction_id: "c2e8bc89-9e1c-4c5e-bd57-3f8d5a6e7b8c"
+                  transaction_status: "cancel"
+                  payment_type: "gopay"
+                  gross_amount: "300000.00"
+              paymentExpired:
+                summary: Payment expired (timeout)
+                value:
+                  order_id: "BOOK-850e8400-1705748400000"
+                  transaction_id: "c2e8bc89-9e1c-4c5e-bd57-3f8d5a6e7b8c"
+                  transaction_status: "expire"
+                  payment_type: "bank_transfer"
+                  gross_amount: "300000.00"
+
+      responses:
+        "200":
+          description: Webhook processed successfully (always returns success)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+              examples:
+                webhookProcessed:
+                  summary: Webhook processed
+                  value:
+                    success: true
+
+        "400":
+          description: Missing order_id in request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessLogicError"
+              examples:
+                missingOrderId:
+                  summary: No order_id provided
+                  value:
+                    error: "No order_id"
+
+        "404":
+          description: Payment record not found for given order_id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundError"
+              examples:
+                paymentNotFound:
+                  summary: Order ID does not exist
+                  value:
+                    error: "Payment not found"
+
+  ###########
+  ## PUBLIC ##
+  ###########
+
+  /public/routes:
+    get:
+      summary: List all routes (public)
+      tags: [Public]
+      security: []
+      responses:
+        "200":
+          description: List of all routes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Route"
+
+  /public/buses:
+    get:
+      summary: List all buses (public)
+      tags: [Public]
+      security: []
+      responses:
+        "200":
+          description: List of all buses
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Bus"
+
+  /public/trips:
+    get:
+      summary: Search available trips (no authentication required)
+      tags: [Public]
+      security: []
+      description: |
+        Search for available bus trips with optional filters.
+        Perfect for building a trip search interface for unauthenticated users.
+
+        **Filters:**
+        - **from**: Case-insensitive partial match on route origin (e.g., "jak" matches "Jakarta")
+        - **to**: Case-insensitive partial match on route destination (e.g., "band" matches "Bandung")
+        - **date**: Exact date match on departure date (YYYY-MM-DD format)
+
+        **Results include:**
+        - Full trip details (departure/arrival times, price)
+        - Associated bus information (name, plate, total seats)
+        - Associated route information (origin, destination, distance)
+
+        **Use cases:**
+        - Display trip search results on homepage
+        - Filter trips by route and date
+        - Show available trips before user login
+
+      parameters:
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by origin city (case-insensitive partial match)
+          example: "Jakarta"
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by destination city (case-insensitive partial match)
+          example: "Bandung"
+        - name: date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Filter by departure date (YYYY-MM-DD format, matches entire day)
+          example: "2024-01-25"
+
+      responses:
+        "200":
+          description: List of trips matching filters (empty array if no matches)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Trip"
+              examples:
+                allTrips:
+                  summary: All trips (no filters)
+                  description: Returns all available trips ordered by departure time
+                  value:
+                    - id: "750e8400-e29b-41d4-a716-446655440003"
+                      busId: "450e8400-e29b-41d4-a716-446655440001"
+                      routeId: "650e8400-e29b-41d4-a716-446655440002"
+                      departureTime: "2024-01-25T08:00:00Z"
+                      arrivalTime: "2024-01-25T12:00:00Z"
+                      price: 150000
+                      createdAt: "2024-01-15T10:00:00Z"
+                      bus:
+                        id: "450e8400-e29b-41d4-a716-446655440001"
+                        name: "Bus Ekonomi Premium 1"
+                        plate: "B 1234 XYZ"
+                        totalSeat: 40
+                      route:
+                        id: "650e8400-e29b-41d4-a716-446655440002"
+                        origin: "Jakarta"
+                        destination: "Bandung"
+                        distanceKm: 150
+                    - id: "750e8400-e29b-41d4-a716-446655440004"
+                      busId: "450e8400-e29b-41d4-a716-446655440002"
+                      routeId: "650e8400-e29b-41d4-a716-446655440003"
+                      departureTime: "2024-01-25T14:00:00Z"
+                      arrivalTime: "2024-01-25T18:00:00Z"
+                      price: 120000
+                      createdAt: "2024-01-15T10:05:00Z"
+                      bus:
+                        id: "450e8400-e29b-41d4-a716-446655440002"
+                        name: "Bus Eksekutif 2"
+                        plate: "B 5678 ABC"
+                        totalSeat: 30
+                      route:
+                        id: "650e8400-e29b-41d4-a716-446655440003"
+                        origin: "Bandung"
+                        destination: "Surabaya"
+                        distanceKm: 700
+                filteredByRoute:
+                  summary: Filtered by origin and destination
+                  description: "Example: ?from=Jakarta&to=Bandung"
+                  value:
+                    - id: "750e8400-e29b-41d4-a716-446655440003"
+                      busId: "450e8400-e29b-41d4-a716-446655440001"
+                      routeId: "650e8400-e29b-41d4-a716-446655440002"
+                      departureTime: "2024-01-25T08:00:00Z"
+                      arrivalTime: "2024-01-25T12:00:00Z"
+                      price: 150000
+                      createdAt: "2024-01-15T10:00:00Z"
+                      bus:
+                        name: "Bus Ekonomi Premium 1"
+                        plate: "B 1234 XYZ"
+                        totalSeat: 40
+                      route:
+                        origin: "Jakarta"
+                        destination: "Bandung"
+                        distanceKm: 150
+                filteredByDate:
+                  summary: Filtered by specific date
+                  description: "Example: ?date=2024-01-25"
+                  value:
+                    - id: "750e8400-e29b-41d4-a716-446655440003"
+                      departureTime: "2024-01-25T08:00:00Z"
+                      arrivalTime: "2024-01-25T12:00:00Z"
+                      price: 150000
+                      bus:
+                        name: "Bus Ekonomi Premium 1"
+                      route:
+                        origin: "Jakarta"
+                        destination: "Bandung"
+                combinedFilters:
+                  summary: Combined filters (route + date)
+                  description: "Example: ?from=Jakarta&to=Bandung&date=2024-01-25"
+                  value:
+                    - id: "750e8400-e29b-41d4-a716-446655440003"
+                      departureTime: "2024-01-25T08:00:00Z"
+                      arrivalTime: "2024-01-25T12:00:00Z"
+                      price: 150000
+                      bus:
+                        name: "Bus Ekonomi Premium 1"
+                      route:
+                        origin: "Jakarta"
+                        destination: "Bandung"
+                noResults:
+                  summary: No matching trips
+                  description: Returns empty array when no trips match filters
+                  value: []
+
+  /public/trips/{id}:
+    get:
+      summary: Get trip details with real-time seat availability
+      tags: [Public]
+      security: []
+      description: |
+        Retrieve detailed information about a specific trip including:
+        - Complete trip details (times, price, bus, route)
+        - Real-time seat availability (seat codes and booking status)
+
+        **Use cases:**
+        - Display trip details page before booking
+        - Show seat selection interface with availability
+        - Allow users to see which seats are available/booked
+
+        **Seat availability:**
+        - \`isBooked: false\` = Seat is available for booking
+        - \`isBooked: true\` = Seat is already booked or reserved
+
+        **No authentication required** - public endpoint for browsing.
+
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Trip ID to retrieve
+          example: "750e8400-e29b-41d4-a716-446655440003"
+
+      responses:
+        "200":
+          description: Trip details with complete seat layout and availability
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - trip
+                  - seats
+                properties:
+                  trip:
+                    type: object
+                    description: Trip information with bus and route details
+                    required:
+                      - id
+                      - bus
+                      - route
+                      - departureTime
+                      - arrivalTime
+                      - price
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      bus:
+                        $ref: "#/components/schemas/Bus"
+                      route:
+                        $ref: "#/components/schemas/Route"
+                      departureTime:
+                        type: string
+                        format: date-time
+                      arrivalTime:
+                        type: string
+                        format: date-time
+                      price:
+                        type: integer
+                  seats:
+                    type: array
+                    description: Array of seats with availability status
+                    items:
+                      $ref: "#/components/schemas/Seat"
+              examples:
+                tripWithSeats:
+                  summary: Trip with seat availability
+                  value:
+                    trip:
+                      id: "750e8400-e29b-41d4-a716-446655440003"
+                      bus:
+                        id: "450e8400-e29b-41d4-a716-446655440001"
+                        name: "Bus Ekonomi Premium 1"
+                        plate: "B 1234 XYZ"
+                        totalSeat: 40
+                      route:
+                        id: "650e8400-e29b-41d4-a716-446655440002"
+                        origin: "Jakarta"
+                        destination: "Bandung"
+                        distanceKm: 150
+                      departureTime: "2024-01-25T08:00:00Z"
+                      arrivalTime: "2024-01-25T12:00:00Z"
+                      price: 150000
+                    seats:
+                      - id: "seat-001"
+                        tripId: "750e8400-e29b-41d4-a716-446655440003"
+                        seatCode: "A1"
+                        isBooked: true
+                        createdAt: "2024-01-15T10:00:00Z"
+                      - id: "seat-002"
+                        tripId: "750e8400-e29b-41d4-a716-446655440003"
+                        seatCode: "A2"
+                        isBooked: true
+                        createdAt: "2024-01-15T10:00:00Z"
+                      - id: "seat-003"
+                        tripId: "750e8400-e29b-41d4-a716-446655440003"
+                        seatCode: "A3"
+                        isBooked: false
+                        createdAt: "2024-01-15T10:00:00Z"
+                      - id: "seat-004"
+                        tripId: "750e8400-e29b-41d4-a716-446655440003"
+                        seatCode: "A4"
+                        isBooked: false
+                        createdAt: "2024-01-15T10:00:00Z"
+                      - id: "seat-005"
+                        tripId: "750e8400-e29b-41d4-a716-446655440003"
+                        seatCode: "B1"
+                        isBooked: false
+                        createdAt: "2024-01-15T10:00:00Z"
+
+        "400":
+          description: Bad request - invalid trip ID format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessLogicError"
+              examples:
+                badRequest:
+                  summary: Invalid or missing trip ID
+                  value:
+                    error: "Bad request"
+
+        "404":
+          description: Trip not found - no trip exists with given ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundError"
+              examples:
+                tripNotFound:
+                  summary: Trip does not exist
+                  value:
+                    error: "Trip not found"
+
+  ############
+  ## BOOKING ##
+  ############
+
+  /booking/me:
+    get:
+      summary: Get authenticated user's bookings
+      tags: [Booking]
+      description: |
+        Retrieve paginated list of all bookings for the authenticated user.
+        Includes full trip details (bus, route), seat information, and payment status.
+        Results are ordered by creation date (newest first).
+
+        **Use cases:**
+        - Display booking history in user dashboard
+        - Track payment status for each booking
+        - View seat assignments and trip details
+
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+          description: Page number for pagination
+          example: 1
+        - name: perPage
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+          description: Number of items per page (max 100)
+          example: 20
+
+      responses:
+        "200":
+          description: Paginated booking list with full details
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - page
+                  - perPage
+                  - total
+                  - data
+                properties:
+                  page:
+                    type: integer
+                    description: Current page number
+                    example: 1
+                  perPage:
+                    type: integer
+                    description: Items per page
+                    example: 20
+                  total:
+                    type: integer
+                    description: Total number of bookings across all pages
+                    example: 45
+                  data:
+                    type: array
+                    description: Array of booking objects with relations
+                    items:
+                      $ref: "#/components/schemas/BookingDetailed"
+              examples:
+                withBookings:
+                  summary: User with multiple bookings
+                  value:
+                    page: 1
+                    perPage: 20
+                    total: 3
+                    data:
+                      - id: "850e8400-e29b-41d4-a716-446655440004"
+                        userId: "550e8400-e29b-41d4-a716-446655440000"
+                        tripId: "750e8400-e29b-41d4-a716-446655440003"
+                        status: "CONFIRMED"
+                        totalPrice: 300000
+                        expiresAt: "2024-01-20T09:15:00Z"
+                        createdAt: "2024-01-20T09:00:00Z"
+                        trip:
+                          id: "750e8400-e29b-41d4-a716-446655440003"
+                          departureTime: "2024-01-25T08:00:00Z"
+                          arrivalTime: "2024-01-25T12:00:00Z"
+                          price: 150000
+                          bus:
+                            id: "450e8400-e29b-41d4-a716-446655440001"
+                            name: "Bus Ekonomi Premium 1"
+                            plate: "B 1234 XYZ"
+                            totalSeat: 40
+                          route:
+                            id: "650e8400-e29b-41d4-a716-446655440002"
+                            origin: "Jakarta"
+                            destination: "Bandung"
+                            distanceKm: 150
+                        seats:
+                          - id: "abc123"
+                            seatId: "seat-a1"
+                            seat:
+                              seatCode: "A1"
+                              isBooked: true
+                          - id: "abc124"
+                            seatId: "seat-a2"
+                            seat:
+                              seatCode: "A2"
+                              isBooked: true
+                        payment:
+                          id: "950e8400-e29b-41d4-a716-446655440005"
+                          status: "PAID"
+                          amount: 300000
+                          orderId: "BOOK-850e8400-1705748400000"
+                emptyBookings:
+                  summary: User with no bookings
+                  value:
+                    page: 1
+                    perPage: 20
+                    total: 0
+                    data: []
+
+        "401":
+          description: Unauthorized - authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnauthorizedError"
+              examples:
+                missingToken:
+                  summary: No authentication token provided
+                  value:
+                    error: "Unauthorized - Invalid or missing token"
+
+  /booking/me/upcoming:
+    get:
+      summary: Get upcoming confirmed bookings
+      tags: [Booking]
+      description: Get current user's confirmed bookings with future departure times
+      responses:
+        "200":
+          description: List of upcoming bookings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        userId:
+                          type: string
+                        tripId:
+                          type: string
+                        status:
+                          type: string
+                        totalPrice:
+                          type: integer
+                        trip:
+                          $ref: "#/components/schemas/Trip"
+                        seats:
+                          type: array
+                          items:
+                            type: object
+                        payment:
+                          $ref: "#/components/schemas/Payment"
+
+  /booking/{id}:
+    get:
+      summary: Get booking detail
+      tags: [Booking]
+      description: Get detailed booking information (owner or admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Booking details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  userId:
+                    type: string
+                  tripId:
+                    type: string
+                  status:
+                    type: string
+                  totalPrice:
+                    type: integer
+                  user:
+                    $ref: "#/components/schemas/User"
+                  trip:
+                    $ref: "#/components/schemas/Trip"
+                  seats:
+                    type: array
+                    items:
+                      type: object
+                  payment:
+                    $ref: "#/components/schemas/Payment"
+        "403":
+          description: Forbidden - not owner or admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Booking not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /booking/{id}/cancel:
+    post:
+      summary: Cancel booking
+      tags: [Booking]
+      description: Cancel a pending booking (owner or admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Booking cancelled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        "400":
+          description: Only pending bookings can be cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Forbidden - not owner or admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Booking not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  ############
+  ## PAYMENT ##
+  ############
+
+  /payment/me:
+    get:
+      summary: Get my payments
+      tags: [Payment]
+      description: Get all payments for current user's bookings
+      responses:
+        "200":
+          description: List of user payments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    bookingId:
+                      type: string
+                    orderId:
+                      type: string
+                    transactionId:
+                      type: string
+                      nullable: true
+                    amount:
+                      type: integer
+                    status:
+                      type: string
+                    booking:
+                      $ref: "#/components/schemas/Booking"
+                    createdAt:
+                      type: string
+                      format: date-time
+
+  ###########
+  ## ADMIN ##
+  ###########
+
+  /admin/revenue/daily:
+    get:
+      summary: Get daily revenue (ADMIN only)
+      tags: [Admin - Revenue]
+      description: Calculate total revenue for a specific date. Defaults to today if no date provided.
+      parameters:
+        - name: date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Date to get revenue for (YYYY-MM-DD, defaults to today)
+          example: "2024-01-25"
+      responses:
+        "200":
+          description: Daily revenue total
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  date:
+                    type: string
+                    format: date-time
+                    example: "2024-01-25T00:00:00Z"
+                  revenue:
+                    type: number
+                    description: Total revenue for the date
+                    example: 4500000
+        "401":
+          description: Unauthorized - authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnauthorizedError"
+        "403":
+          description: Forbidden - ADMIN role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForbiddenError"
+
+  /admin/revenue/monthly:
+    get:
+      summary: Get monthly revenue (ADMIN only)
+      tags: [Admin - Revenue]
+      description: Calculate total revenue for a specific month.
+      parameters:
+        - name: year
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Year (defaults to current year)
+          example: 2024
+        - name: month
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+          description: Month (1-12, defaults to current month)
+          example: 1
+      responses:
+        "200":
+          description: Monthly revenue total
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  year:
+                    type: integer
+                    example: 2024
+                  month:
+                    type: integer
+                    example: 1
+                  revenue:
+                    type: number
+                    example: 125000000
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnauthorizedError"
+        "403":
+          description: Forbidden - ADMIN role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForbiddenError"
+
+  /admin/revenue/route:
+    get:
+      summary: Revenue by route (ADMIN only)
+      tags: [Admin - Revenue]
+      description: Get revenue breakdown grouped by route.
+      responses:
+        "200":
+          description: Revenue grouped by route
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    route_id:
+                      type: string
+                    origin:
+                      type: string
+                    destination:
+                      type: string
+                    revenue:
+                      type: number
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnauthorizedError"
+        "403":
+          description: Forbidden - ADMIN role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForbiddenError"
+
+  /admin/revenue/bus:
+    get:
+      summary: Revenue by bus (ADMIN only)
+      tags: [Admin - Revenue]
+      description: Get revenue breakdown grouped by bus.
+      responses:
+        "200":
+          description: Revenue grouped by bus
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    bus_id:
+                      type: string
+                    name:
+                      type: string
+                    plate:
+                      type: string
+                    revenue:
+                      type: number
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnauthorizedError"
+        "403":
+          description: Forbidden - ADMIN role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForbiddenError"
+
+  /admin/bookings:
+    get:
+      summary: Get all bookings with filters (ADMIN only)
+      tags: [Admin - Bookings]
+      description: Retrieve paginated list of all bookings across all users with optional filters.
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: perPage
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [PENDING, PAID, CONFIRMED, EXPIRED, CANCELLED]
+          description: Filter by booking status
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Filter bookings created after this date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Filter bookings created before this date
+        - name: routeId
+          in: query
+          schema:
+            type: string
+          description: Filter by route ID
+        - name: tripId
+          in: query
+          schema:
+            type: string
+          description: Filter by trip ID
+      responses:
+        "200":
+          description: Paginated booking list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  page:
+                    type: integer
+                  perPage:
+                    type: integer
+                  total:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Booking"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnauthorizedError"
+        "403":
+          description: Forbidden - ADMIN role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForbiddenError"
+
+  /admin/bookings/stats:
+    get:
+      summary: Get booking statistics (ADMIN only)
+      tags: [Admin - Bookings]
+      description: Get summary statistics of bookings grouped by status.
+      responses:
+        "200":
+          description: Booking statistics summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  counts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        status:
+                          type: string
+                        _count:
+                          type: object
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnauthorizedError"
+        "403":
+          description: Forbidden - ADMIN role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForbiddenError"
+
+  /admin/users:
+    post:
+      summary: Create new user (admin)
+      tags: [Admin - Users]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 6
+                role:
+                  type: string
+                  enum: [ADMIN, USER]
+      responses:
+        "200":
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    get:
+      summary: List all users
+      tags: [Admin - Users]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: perPage
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+      responses:
+        "200":
+          description: Paginated user list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  page:
+                    type: integer
+                  perPage:
+                    type: integer
+                  total:
+                    type: integer
+                  users:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/User"
+
+  /admin/users/{id}/promote:
+    post:
+      summary: Promote or demote user
+      tags: [Admin - Users]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:
+                  type: string
+                  enum: [ADMIN, USER]
+      responses:
+        "200":
+          description: User role updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /admin/buses:
+    post:
+      summary: Create new bus
+      tags: [Admin - Buses]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, plate, totalSeat]
+              properties:
+                name:
+                  type: string
+                  example: "Bus Ekonomi 1"
+                plate:
+                  type: string
+                  example: "B 1234 XYZ"
+                totalSeat:
+                  type: integer
+                  example: 40
+      responses:
+        "200":
+          description: Bus created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Bus"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    get:
+      summary: List all buses
+      tags: [Admin - Buses]
+      responses:
+        "200":
+          description: List of buses
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Bus"
+
+  /admin/buses/{id}:
+    put:
+      summary: Update bus
+      tags: [Admin - Buses]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                plate:
+                  type: string
+                totalSeat:
+                  type: integer
+      responses:
+        "200":
+          description: Bus updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Bus"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    delete:
+      summary: Delete bus
+      tags: [Admin - Buses]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Bus deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /admin/routes:
+    post:
+      summary: Create new route
+      tags: [Admin - Routes]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [origin, destination, distanceKm]
+              properties:
+                origin:
+                  type: string
+                  example: "Jakarta"
+                destination:
+                  type: string
+                  example: "Bandung"
+                distanceKm:
+                  type: integer
+                  example: 150
+      responses:
+        "200":
+          description: Route created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Route"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    get:
+      summary: List all routes
+      tags: [Admin - Routes]
+      responses:
+        "200":
+          description: List of routes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Route"
+
+  /admin/routes/{id}:
+    put:
+      summary: Update route
+      tags: [Admin - Routes]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                origin:
+                  type: string
+                destination:
+                  type: string
+                distanceKm:
+                  type: integer
+      responses:
+        "200":
+          description: Route updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Route"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    delete:
+      summary: Delete route
+      tags: [Admin - Routes]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Route deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /admin/trips:
+    post:
+      summary: Create new trip
+      tags: [Admin - Trips]
+      description: Create trip with optional automatic seat generation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [busId, routeId, departureTime, arrivalTime, price]
+              properties:
+                busId:
+                  type: string
+                  format: uuid
+                routeId:
+                  type: string
+                  format: uuid
+                departureTime:
+                  type: string
+                  format: date-time
+                  example: "2024-01-20T08:00:00Z"
+                arrivalTime:
+                  type: string
+                  format: date-time
+                  example: "2024-01-20T12:00:00Z"
+                price:
+                  type: integer
+                  example: 150000
+                generateSeats:
+                  type: boolean
+                  description: Auto-generate seats for this trip
+                  example: true
+                rows:
+                  type: integer
+                  description: Number of rows (if generateSeats is true)
+                  example: 10
+                cols:
+                  type: integer
+                  description: Number of columns (if generateSeats is true)
+                  example: 4
+      responses:
+        "200":
+          description: Trip created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Trip"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    get:
+      summary: List all trips
+      tags: [Admin - Trips]
+      responses:
+        "200":
+          description: List of trips with bus and route details
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Trip"
+
+  /admin/trips/{id}:
+    put:
+      summary: Update trip
+      tags: [Admin - Trips]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                busId:
+                  type: string
+                  format: uuid
+                routeId:
+                  type: string
+                  format: uuid
+                departureTime:
+                  type: string
+                  format: date-time
+                arrivalTime:
+                  type: string
+                  format: date-time
+                price:
+                  type: integer
+      responses:
+        "200":
+          description: Trip updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Trip"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    delete:
+      summary: Delete trip
+      tags: [Admin - Trips]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Trip deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+`;
+
 // Serve the OpenAPI YAML as static text
 docs.get("/openapi.yaml", (c) => {
-  const filePath = path.join(process.cwd(), "src/docs/openapi.yaml");
-  const yaml = fs.readFileSync(filePath, "utf8");
-  return c.text(yaml, 200, {
+  return c.text(openApiYaml, 200, {
     "Content-Type": "text/yaml",
   });
 });
