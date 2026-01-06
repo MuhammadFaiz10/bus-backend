@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { logger } from "hono/logger";
+import { cors } from "hono/cors";
 // import { serveStatic } from "@hono/node-server/serve-static";
 import { prismaMiddleware } from "./middlewares/prisma.middleware";
 import { HonoEnv } from "./types/app";
@@ -15,6 +16,7 @@ const app = new Hono<HonoEnv>();
 
 // Global Middlewares
 app.use('*', logger());
+app.use('*', cors());
 app.use('*', prismaMiddleware); // Inject Prisma into context
 
 // Documentation

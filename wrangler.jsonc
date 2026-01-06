@@ -34,5 +34,11 @@
 	"observability": {
 		"enabled": true,
 		"head_sampling_rate": 1 // Sample 100% of requests for tracing
+	},
+	// Static Assets (Frontend)
+	// Serves files from admin-dist directory, fallback to Worker for API/dynamic routes
+	"assets": {
+		"directory": "./admin-dist",
+		"binding": "ASSETS"
 	}
 }
