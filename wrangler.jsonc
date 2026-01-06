@@ -10,6 +10,13 @@
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
+	// Custom Domain Configuration
+	"routes": [
+		{
+			"pattern": "busapp.hafizhfadh.id",
+			"custom_domain": true
+		}
+	],
 	// Bindings allow your worker to interact with other Cloudflare resources
 	// D1 Database Binding
 	"d1_databases": [
