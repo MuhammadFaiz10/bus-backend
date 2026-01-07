@@ -7,6 +7,7 @@ import RoutesPage from "./pages/Routes";
 import Trips from "./pages/Trips";
 import Bookings from "./pages/Bookings";
 import Users from "./pages/Users";
+import Terminals from "./pages/Terminals";
 import Layout from "./components/Layout";
 import Toast from "./components/Toast";
 import { getToken } from "./services/auth";
@@ -36,6 +37,7 @@ export default function App() {
           <Route path="trips" element={<Trips />} />
           <Route path="bookings" element={<Bookings />} />
           <Route path="users" element={<Users />} />
+          <Route path="terminals" element={<Terminals />} />
         </Route>
       </Routes>
       <Toast />

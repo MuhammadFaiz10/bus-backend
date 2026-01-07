@@ -198,6 +198,42 @@ components:
           description: Route record creation timestamp
           example: "2024-01-05T09:00:00Z"
 
+    Terminal:
+      type: object
+      description: Bus terminal or station location
+      required:
+        - id
+        - code
+        - name
+        - city
+        - type
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique terminal identifier
+        code:
+          type: string
+          description: Unique terminal code
+          example: "JKT-PG"
+        name:
+          type: string
+          description: Terminal name
+          example: "Terminal Pulo Gebang"
+        city:
+          type: string
+          description: City where terminal is located
+          example: "Jakarta"
+        type:
+          type: string
+          enum: [TERMINAL, STATION, POOL]
+          description: Type of facility
+          example: "TERMINAL"
+        createdAt:
+          type: string
+          format: date-time
+
     Trip:
       type: object
       description: Scheduled bus trip on a specific route
@@ -637,7 +673,64 @@ tags:
       Create, update, delete, and list scheduled trips.
       Configure departure/arrival times, pricing, and automatic seat generation.
 
+  - name: Public - Terminals
+    description: |
+      Terminal and station information endpoints.
+      List all available terminals, stations, and pools.
+
 paths:
+  /terminals:
+    get:
+      summary: List all terminals
+      tags: [Public - Terminals]
+      security: []
+      description: |
+        Get a list of all bus terminals, stations, and pools.
+        Useful for populating origin/destination selectors in the frontend.
+      responses:
+        "200":
+          description: List of terminals retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Terminal"
+    post:
+      summary: Create new terminal (Admin only)
+      tags: [Admin - Buses]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, name, city, type]
+              properties:
+                code:
+                  type: string
+                  minLength: 3
+                name:
+                  type: string
+                  minLength: 3
+                city:
+                  type: string
+                  minLength: 3
+                type:
+                  type: string
+                  enum: [TERMINAL, STATION, POOL]
+      responses:
+        "201":
+          description: Terminal created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Terminal"
+        "409":
+          description: Terminal code already exists
+
   /auth/register:
     post:
       summary: Register new user account

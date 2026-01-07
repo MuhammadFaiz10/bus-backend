@@ -29,6 +29,9 @@ export default function Layout() {
           <Link to="/routes" className="link">
             Routes
           </Link>
+          <Link to="/terminals" className="link">
+            Terminals
+          </Link>
           <Link to="/trips" className="link">
             Trips
           </Link>
