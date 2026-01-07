@@ -8,6 +8,17 @@ function hash(pw: string) {
 }
 
 async function main() {
+  console.log("🌱 Cleaning up database...");
+  await prisma.payment.deleteMany();
+  await prisma.bookingSeat.deleteMany();
+  await prisma.booking.deleteMany();
+  await prisma.seat.deleteMany();
+  await prisma.trip.deleteMany();
+  await prisma.route.deleteMany();
+  await prisma.bus.deleteMany();
+  await prisma.user.deleteMany();
+  console.log("✓ Database cleaned");
+
   console.log("🌱 Seeding database...");
 
   // ---------------------------
@@ -15,148 +26,206 @@ async function main() {
   // ---------------------------
   const admin = await prisma.user.create({
     data: {
-      name: "Admin",
+      name: "Super Admin",
       email: "admin@test.com",
       password: hash("password123"),
       role: "ADMIN",
     },
   });
 
-  const user1 = await prisma.user.create({
-    data: {
-      name: "User One",
-      email: "user1@test.com",
-      password: hash("password123"),
-      role: "USER",
-    },
-  });
+  const usersData = [
+    { name: "Andi Saputra", email: "andi@test.com" },
+    { name: "Budi Santoso", email: "budi@test.com" },
+    { name: "Citra Lestari", email: "citra@test.com" },
+    { name: "Dewi Pratama", email: "dewi@test.com" },
+    { name: "Eko Wahyudi", email: "eko@test.com" },
+    { name: "Farhan Hakim", email: "farhan@test.com" },
+  ];
 
-  const user2 = await prisma.user.create({
-    data: {
-      name: "User Two",
-      email: "user2@test.com",
-      password: hash("password123"),
-      role: "USER",
-    },
-  });
+  const users = await Promise.all(
+    usersData.map((u) =>
+      prisma.user.create({
+        data: {
+          ...u,
+          password: hash("password123"),
+          role: "USER",
+        },
+      })
+    )
+  );
 
   console.log("✓ Users inserted");
 
   // ---------------------------
-  // BUSES
+  // BUSES (10 Buses)
   // ---------------------------
-  const busA = await prisma.bus.create({
-    data: {
-      name: "Bus Eksekutif A",
-      plate: "B 7777 AB",
-      totalSeat: 40,
-    },
-  });
+  const busesData = [
+    { name: "Djawa Bus - Eksekutif", plate: "B 1234 PK", totalSeat: 32 },
+    { name: "Djawa Bus - Ekonomi", plate: "B 5678 SJ", totalSeat: 40 },
+    { name: "Djawa Bus - First Class", plate: "AD 1111 RI", totalSeat: 21 },
+    { name: "Djawa Bus - HR Edition", plate: "K 1524 AB", totalSeat: 34 },
+    { name: "Djawa Bus - Double Decker", plate: "N 7777 GH", totalSeat: 42 },
+    { name: "Djawa Bus - Suite Class", plate: "B 9999 SC", totalSeat: 22 },
+    { name: "Djawa Bus - Premium", plate: "D 8888 PR", totalSeat: 36 },
+    { name: "Djawa Bus - Super Eksekutif", plate: "L 5555 SE", totalSeat: 30 },
+    { name: "Djawa Bus - Luxury", plate: "B 4444 LX", totalSeat: 18 },
+    { name: "Djawa Bus - Sleeper", plate: "H 3333 SL", totalSeat: 20 },
+  ];
 
-  const busB = await prisma.bus.create({
-    data: {
-      name: "Bus Ekonomi B",
-      plate: "D 1234 BB",
-      totalSeat: 32,
-    },
-  });
+  const buses = await Promise.all(
+    busesData.map((b) => prisma.bus.create({ data: b }))
+  );
 
-  console.log("✓ Buses inserted");
-
-  // ---------------------------
-  // ROUTES
-  // ---------------------------
-  const routeJakartaBandung = await prisma.route.create({
-    data: {
-      origin: "Jakarta",
-      destination: "Bandung",
-      distanceKm: 150,
-    },
-  });
-
-  const routeBandungJogja = await prisma.route.create({
-    data: {
-      origin: "Bandung",
-      destination: "Yogyakarta",
-      distanceKm: 350,
-    },
-  });
-
-  console.log("✓ Routes inserted");
+  console.log("✓ 10 Buses inserted");
 
   // ---------------------------
-  // TRIPS WITH AUTO-SEATS
+  // ROUTES (20 Routes)
   // ---------------------------
+  const routesData = [
+    { origin: "Jakarta", destination: "Bandung", distanceKm: 150 },
+    { origin: "Jakarta", destination: "Surabaya", distanceKm: 780 },
+    { origin: "Semarang", destination: "Yogyakarta", distanceKm: 120 },
+    { origin: "Surabaya", destination: "Malang", distanceKm: 95 },
+    { origin: "Bandung", destination: "Yogyakarta", distanceKm: 350 },
+    { origin: "Jakarta", destination: "Yogyakarta", distanceKm: 420 },
+    { origin: "Jakarta", destination: "Semarang", distanceKm: 450 },
+    { origin: "Jakarta", destination: "Solo", distanceKm: 530 },
+    { origin: "Jakarta", destination: "Malang", distanceKm: 850 },
+    { origin: "Bandung", destination: "Surabaya", distanceKm: 700 },
+    { origin: "Surabaya", destination: "Solo", distanceKm: 260 },
+    { origin: "Solo", destination: "Yogyakarta", distanceKm: 65 },
+    { origin: "Semarang", destination: "Surabaya", distanceKm: 350 },
+    { origin: "Jakarta", destination: "Cirebon", distanceKm: 210 },
+    { origin: "Bandung", destination: "Cirebon", distanceKm: 130 },
+    { origin: "Surabaya", destination: "Cirebon", distanceKm: 570 },
+    { origin: "Yogyakarta", destination: "Surabaya", distanceKm: 330 },
+    { origin: "Yogyakarta", destination: "Malang", distanceKm: 400 },
+    { origin: "Malang", destination: "Solo", distanceKm: 320 },
+    { origin: "Jakarta", destination: "Purwokerto", distanceKm: 350 },
+  ];
 
+  const routes = await Promise.all(
+    routesData.map((r) => prisma.route.create({ data: r }))
+  );
+
+  console.log("✓ 20 Routes inserted");
+
+  // ---------------------------
+  // TRIPS & SEATS (20 Trips)
+  // ---------------------------
   const now = new Date();
+  const trips = [];
 
-  const trip1 = await prisma.trip.create({
-    data: {
-      busId: busA.id,
-      routeId: routeJakartaBandung.id,
-      departureTime: new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate(),
-        8,
-        0
-      ),
-      arrivalTime: new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate(),
-        12,
-        0
-      ),
-      price: 120000,
-    },
-  });
+  // Generate 20 trips distributed over routes and days
+  for (let i = 0; i < 20; i++) {
+    const route = routes[i % routes.length];
+    const bus = buses[i % buses.length];
 
-  const trip2 = await prisma.trip.create({
-    data: {
-      busId: busB.id,
-      routeId: routeBandungJogja.id,
-      departureTime: new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate(),
-        14,
-        0
-      ),
-      arrivalTime: new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate(),
-        20,
-        0
-      ),
-      price: 200000,
-    },
-  });
+    const dayOffset = Math.floor(i / 10); // First 10 today, next 10 tomorrow
+    const day = new Date(now);
+    day.setDate(now.getDate() + dayOffset);
 
-  console.log("✓ Trips inserted");
+    const departureTime = new Date(day);
+    departureTime.setHours(7 + (i % 10) * 1.5, 0, 0, 0); // Spaced out times
 
-  // ---------------------------
-  // GENERATE SEATS
-  // ---------------------------
-  async function generateSeats(tripId: string, rows = 10, cols = 4) {
+    const arrivalTime = new Date(departureTime);
+    arrivalTime.setHours(
+      departureTime.getHours() + Math.ceil(route.distanceKm / 60)
+    );
+
+    const trip = await prisma.trip.create({
+      data: {
+        busId: bus.id,
+        routeId: route.id,
+        departureTime,
+        arrivalTime,
+        price: 50000 + route.distanceKm * 200,
+      },
+    });
+    trips.push(trip);
+
+    // Generate Seats for each trip
+    const rows = Math.ceil(bus.totalSeat / 4);
     const seats = [];
     for (let r = 0; r < rows; r++) {
-      for (let c = 1; c <= cols; c++) {
-        seats.push({
-          tripId,
-          seatCode: `${String.fromCharCode(65 + r)}${c}`,
-        });
+      for (let c = 1; c <= 4; c++) {
+        const seatNum = r * 4 + c;
+        if (seatNum <= bus.totalSeat) {
+          seats.push({
+            tripId: trip.id,
+            seatCode: `${String.fromCharCode(65 + r)}${c}`,
+          });
+        }
       }
     }
     await prisma.seat.createMany({ data: seats });
   }
 
-  await generateSeats(trip1.id);
-  await generateSeats(trip2.id);
+  console.log(`✓ 20 Trips and their Seats generated`);
 
-  console.log("✓ Seats generated");
+  // ---------------------------
+  // SAMPLE BOOKINGS
+  // ---------------------------
+  console.log("🌱 Creating sample bookings...");
 
+  // Booking for Andi (Confirmed)
+  const tripAndi = trips[0];
+  const seatsAndi = await prisma.seat.findMany({
+    where: { tripId: tripAndi.id },
+    take: 2,
+  });
+
+  const bookingAndi = await prisma.booking.create({
+    data: {
+      userId: users[0].id,
+      tripId: tripAndi.id,
+      status: "CONFIRMED",
+      totalPrice: tripAndi.price * 2,
+      expiresAt: new Date(now.getTime() + 15 * 60000),
+      seats: {
+        create: seatsAndi.map((s) => ({ seatId: s.id })),
+      },
+    },
+  });
+
+  await prisma.payment.create({
+    data: {
+      bookingId: bookingAndi.id,
+      orderId: `BOOK-${bookingAndi.id.slice(0, 8)}-${Date.now()}`,
+      amount: bookingAndi.totalPrice,
+      status: "PAID",
+      transactionId: `TRX-${crypto.randomBytes(4).toString("hex")}`,
+    },
+  });
+
+  // Mark seats as booked
+  await prisma.seat.updateMany({
+    where: { id: { in: seatsAndi.map((s) => s.id) } },
+    data: { isBooked: true },
+  });
+
+  // Booking for Budi (Pending)
+  const tripBudi = trips[1];
+  const seatBudi = await prisma.seat.findFirst({
+    where: { tripId: tripBudi.id },
+  });
+
+  if (seatBudi) {
+    await prisma.booking.create({
+      data: {
+        userId: users[1].id,
+        tripId: tripBudi.id,
+        status: "PENDING",
+        totalPrice: tripBudi.price,
+        expiresAt: new Date(now.getTime() + 15 * 60000),
+        seats: {
+          create: [{ seatId: seatBudi.id }],
+        },
+      },
+    });
+  }
+
+  console.log("✓ Sample bookings and payments inserted");
   console.log("🌱 Seeder completed!");
 }
 
