@@ -1,7 +1,6 @@
 import { z } from "zod";
-import { prisma } from "../../config/database";
 import { signJwt } from "../../utils/jwt";
-import crypto from "crypto";
+import crypto from "node:crypto";
 const registerSchema = z.object({
     name: z.string(),
     email: z.string().email(),
@@ -23,6 +22,7 @@ function hashPassword(pw) {
     return crypto.createHash("sha256").update(pw).digest("hex");
 }
 export async function registerHandler(c) {
+    const prisma = c.get("prisma");
     const body = await c.req.json();
     const parsed = registerSchema.safeParse(body);
     if (!parsed.success)
@@ -45,6 +45,7 @@ export async function registerHandler(c) {
     });
 }
 export async function loginHandler(c) {
+    const prisma = c.get("prisma");
     const body = await c.req.json();
     const parsed = loginSchema.safeParse(body);
     if (!parsed.success)
@@ -69,6 +70,7 @@ export async function loginHandler(c) {
  * GET /auth/me - Get current user profile
  */
 export async function getMeHandler(c) {
+    const prisma = c.get("prisma");
     const jwtUser = c.user;
     const user = await prisma.user.findUnique({
         where: { id: jwtUser.sub },
@@ -88,6 +90,7 @@ export async function getMeHandler(c) {
  * PUT /auth/me - Update current user profile
  */
 export async function updateMeHandler(c) {
+    const prisma = c.get("prisma");
     const jwtUser = c.user;
     const body = await c.req.json();
     const parsed = updateProfileSchema.safeParse(body);
@@ -121,6 +124,7 @@ export async function updateMeHandler(c) {
  * PUT /auth/change-password - Change password
  */
 export async function changePasswordHandler(c) {
+    const prisma = c.get("prisma");
     const jwtUser = c.user;
     const body = await c.req.json();
     const parsed = changePasswordSchema.safeParse(body);

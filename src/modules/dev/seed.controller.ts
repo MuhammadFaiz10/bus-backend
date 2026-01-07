@@ -18,6 +18,7 @@ export async function seedHandler(c: Context<HonoEnv>) {
     await prisma.trip.deleteMany();
     await prisma.route.deleteMany();
     await prisma.bus.deleteMany();
+    await prisma.terminal.deleteMany();
     await prisma.user.deleteMany();
     console.log("✓ Database cleaned");
 
@@ -232,6 +233,88 @@ export async function seedHandler(c: Context<HonoEnv>) {
     }
 
     console.log("✓ Sample bookings and payments inserted");
+
+    // ---------------------------
+    // TERMINALS
+    // ---------------------------
+    const terminalsData = [
+      {
+        code: "JKT-PG",
+        name: "Terminal Pulo Gebang",
+        city: "Jakarta",
+        type: "TERMINAL",
+      },
+      {
+        code: "JKT-KR",
+        name: "Terminal Kampung Rambutan",
+        city: "Jakarta",
+        type: "TERMINAL",
+      },
+      {
+        code: "BDG-LW",
+        name: "Terminal Leuwipanjang",
+        city: "Bandung",
+        type: "TERMINAL",
+      },
+      {
+        code: "BDG-CC",
+        name: "Terminal Cicaheum",
+        city: "Bandung",
+        type: "TERMINAL",
+      },
+      {
+        code: "SBY-BG",
+        name: "Terminal Purabaya (Bungurasih)",
+        city: "Surabaya",
+        type: "TERMINAL",
+      },
+      {
+        code: "YOG-GW",
+        name: "Terminal Giwangan",
+        city: "Yogyakarta",
+        type: "TERMINAL",
+      },
+      {
+        code: "SOL-TR",
+        name: "Terminal Tirtonadi",
+        city: "Solo",
+        type: "TERMINAL",
+      },
+      {
+        code: "SMG-MK",
+        name: "Terminal Mangkang",
+        city: "Semarang",
+        type: "TERMINAL",
+      },
+      {
+        code: "MLG-AR",
+        name: "Terminal Arjosari",
+        city: "Malang",
+        type: "TERMINAL",
+      },
+      {
+        code: "CRB-HM",
+        name: "Terminal Harjamukti",
+        city: "Cirebon",
+        type: "TERMINAL",
+      },
+      {
+        code: "JKT-POOL-1",
+        name: "Pool Djawa Bus Jakarta",
+        city: "Jakarta",
+        type: "POOL",
+      },
+      {
+        code: "BDG-POOL-1",
+        name: "Pool Djawa Bus Bandung",
+        city: "Bandung",
+        type: "POOL",
+      },
+    ];
+
+    await prisma.terminal.createMany({ data: terminalsData });
+    console.log(`✓ ${terminalsData.length} Terminals inserted`);
+
     console.log("🌱 Seeder completed!");
 
     return c.json({ success: true, message: "Database seeded successfully" });

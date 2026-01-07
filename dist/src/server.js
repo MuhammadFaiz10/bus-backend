@@ -5,7 +5,9 @@ import { PORT } from "./config/env";
 import { cleanupExpiredBookings } from "./utils/cron";
 app.fire();
 console.log(`Listening on port ${PORT}`);
+import { getPrisma } from "./config/database";
+const prisma = getPrisma({});
 // optional: simple interval to cleanup expired bookings
 setInterval(() => {
-    cleanupExpiredBookings().catch((e) => console.error("cron err", e));
+    cleanupExpiredBookings(prisma).catch((e) => console.error("cron err", e));
 }, 60 * 1000);

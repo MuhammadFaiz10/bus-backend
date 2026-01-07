@@ -27,7 +27,7 @@ function hashPassword(pw: string) {
 }
 
 export async function registerHandler(c: Context<HonoEnv>) {
-  const prisma = c.get('prisma');
+  const prisma = c.get("prisma");
   const body = await c.req.json();
   const parsed = registerSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.issues }, 400);
@@ -51,7 +51,7 @@ export async function registerHandler(c: Context<HonoEnv>) {
 }
 
 export async function loginHandler(c: Context<HonoEnv>) {
-  const prisma = c.get('prisma');
+  const prisma = c.get("prisma");
   const body = await c.req.json();
   const parsed = loginSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.issues }, 400);
@@ -77,7 +77,8 @@ export async function loginHandler(c: Context<HonoEnv>) {
 /**
  * GET /auth/me - Get current user profile
  */
-export async function getMeHandler(c: Context) {
+export async function getMeHandler(c: Context<HonoEnv>) {
+  const prisma = c.get("prisma");
   const jwtUser = (c as any).user;
   const user = await prisma.user.findUnique({
     where: { id: jwtUser.sub },
@@ -96,7 +97,8 @@ export async function getMeHandler(c: Context) {
 /**
  * PUT /auth/me - Update current user profile
  */
-export async function updateMeHandler(c: Context) {
+export async function updateMeHandler(c: Context<HonoEnv>) {
+  const prisma = c.get("prisma");
   const jwtUser = (c as any).user;
   const body = await c.req.json();
   const parsed = updateProfileSchema.safeParse(body);
@@ -131,7 +133,8 @@ export async function updateMeHandler(c: Context) {
 /**
  * PUT /auth/change-password - Change password
  */
-export async function changePasswordHandler(c: Context) {
+export async function changePasswordHandler(c: Context<HonoEnv>) {
+  const prisma = c.get("prisma");
   const jwtUser = (c as any).user;
   const body = await c.req.json();
   const parsed = changePasswordSchema.safeParse(body);

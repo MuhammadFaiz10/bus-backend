@@ -1,5 +1,4 @@
-import { prisma } from "../config/database";
-export async function cleanupExpiredBookings() {
+export async function cleanupExpiredBookings(prisma) {
     const expired = await prisma.booking.findMany({
         where: { status: "PENDING", expiresAt: { lt: new Date() } },
     });

@@ -1,8 +1,8 @@
-import { prisma } from "../../config/database";
 /**
  * GET /public/routes
  */
 export async function listRoutesHandler(c) {
+    const prisma = c.get('prisma');
     const routes = await prisma.route.findMany({
         orderBy: { createdAt: "desc" },
     });
@@ -12,6 +12,7 @@ export async function listRoutesHandler(c) {
  * GET /public/buses
  */
 export async function listBusesHandler(c) {
+    const prisma = c.get('prisma');
     const buses = await prisma.bus.findMany({ orderBy: { createdAt: "desc" } });
     return c.json(buses);
 }
@@ -20,6 +21,7 @@ export async function listBusesHandler(c) {
  * optional query: from, to, date (YYYY-MM-DD)
  */
 export async function listTripsHandler(c) {
+    const prisma = c.get('prisma');
     const q = c.req.query();
     const where = {};
     if (q.from)
@@ -46,6 +48,7 @@ export async function listTripsHandler(c) {
  * Returns trip + seat layout + seat availability
  */
 export async function tripDetailHandler(c) {
+    const prisma = c.get('prisma');
     const id = c.req.param("id");
     if (!id)
         return c.json({ error: "Bad request" }, 400);

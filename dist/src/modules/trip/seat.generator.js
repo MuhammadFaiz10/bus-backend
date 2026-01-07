@@ -1,5 +1,4 @@
-import { prisma } from "../../config/database";
-export async function generateSeatsForTrip(tripId, layout = {
+export async function generateSeatsForTrip(prisma, tripId, layout = {
     rows: 10,
     cols: 4,
 }) {

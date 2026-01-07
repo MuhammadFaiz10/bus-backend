@@ -12,6 +12,9 @@ serve({
 console.log(`🚀 Server running on http://localhost:${PORT || 3000}`);
 console.log(`📚 Swagger UI available at http://localhost:${PORT || 3000}/docs`);
 // Optional: simple interval to cleanup expired bookings
+// Optional: simple interval to cleanup expired bookings
+import { getPrisma } from "./config/database";
+const prisma = getPrisma({}); // Local env fallback
 setInterval(() => {
-    cleanupExpiredBookings().catch((e) => console.error("cron err", e));
+    cleanupExpiredBookings(prisma).catch((e) => console.error("cron err", e));
 }, 60 * 1000);

@@ -1,14 +1,14 @@
 import axios from "axios";
-import { MIDTRANS_SERVER_KEY, MIDTRANS_IS_PRODUCTION } from "../../config/env";
-const BASE = MIDTRANS_IS_PRODUCTION
-    ? "https://api.midtrans.com/v2"
-    : "https://api.sandbox.midtrans.com/v2";
-export async function createTransaction(orderId, amount, customer) {
+import { Buffer } from "node:buffer";
+export async function createTransaction(serverKey, isProduction, orderId, amount, customer) {
+    const BASE = isProduction
+        ? "https://api.midtrans.com/v2"
+        : "https://api.sandbox.midtrans.com/v2";
     const payload = {
         transaction_details: { order_id: orderId, gross_amount: amount },
         customer_details: customer,
     };
-    const auth = Buffer.from(MIDTRANS_SERVER_KEY + ":").toString("base64");
+    const auth = Buffer.from(serverKey + ":").toString("base64");
     const res = await axios.post(`${BASE}/charge`, payload, {
         headers: {
             Authorization: `Basic ${auth}`,

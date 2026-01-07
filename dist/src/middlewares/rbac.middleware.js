@@ -1,4 +1,3 @@
-import { prisma } from "../config/database";
 /**
  * requireRole: require a role (ADMIN or USER)
  */
@@ -31,6 +30,7 @@ export function requireOwner(resource, paramName = "id") {
             await next();
             return;
         }
+        const prisma = c.get('prisma');
         if (resource === "booking") {
             const booking = await prisma.booking.findUnique({ where: { id } });
             if (!booking)

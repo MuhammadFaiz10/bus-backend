@@ -1,3 +1,4 @@
+import { ExecutionContext, ScheduledEvent } from "@cloudflare/workers-types";
 import app from "./app";
 import { Bindings, getPrisma } from "./config/database";
 import { cleanupExpiredBookings } from "./utils/cron";
