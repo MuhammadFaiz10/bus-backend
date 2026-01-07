@@ -1,6 +1,6 @@
 import { createTransaction } from "./midtrans.client";
 export async function createPaymentHandler(c) {
-    const prisma = c.get('prisma');
+    const prisma = c.get("prisma");
     const body = await c.req.json();
     const { bookingId } = body;
     const user = c.user;
@@ -29,7 +29,7 @@ export async function createPaymentHandler(c) {
     return c.json({ payment: mid });
 }
 export async function midtransWebhookHandler(c) {
-    const prisma = c.get('prisma');
+    const prisma = c.get("prisma");
     const body = await c.req.json();
     const orderId = body.order_id;
     const status = body.transaction_status;
@@ -39,28 +39,38 @@ export async function midtransWebhookHandler(c) {
     if (!payment)
         return c.json({ error: "Payment not found" }, 404);
     if (status === "settlement" || status === "capture") {
-        await prisma.$transaction(async (tx) => {
-            await tx.payment.update({
-                where: { orderId },
-                data: {
-                    status: "PAID",
-                    transactionId: body.transaction_id || null,
-                    rawResponse: body,
+        // 1. Fetch related data (Read)
+        const currentPayment = await prisma.payment.findUnique({
+            where: { orderId },
+            include: {
+                booking: {
+                    include: {
+                        seats: true, // include bookingSeat relations
+                    },
                 },
-            });
-            await tx.booking.update({
-                where: { id: payment.bookingId },
-                data: { status: "CONFIRMED" },
-            });
-            const bs = await tx.bookingSeat.findMany({
-                where: { bookingId: payment.bookingId },
-            });
-            const seatIds = bs.map((b) => b.seatId);
-            await tx.seat.updateMany({
-                where: { id: { in: seatIds } },
-                data: { isBooked: true },
-            });
+            },
         });
+        if (currentPayment && currentPayment.booking) {
+            const seatIds = currentPayment.booking.seats.map((bs) => bs.seatId);
+            await prisma.$transaction([
+                prisma.payment.update({
+                    where: { orderId },
+                    data: {
+                        status: "PAID",
+                        transactionId: body.transaction_id || null,
+                        rawResponse: body,
+                    },
+                }),
+                prisma.booking.update({
+                    where: { id: payment.bookingId },
+                    data: { status: "CONFIRMED" },
+                }),
+                prisma.seat.updateMany({
+                    where: { id: { in: seatIds } },
+                    data: { isBooked: true },
+                }),
+            ]);
+        }
     }
     else if (status === "deny" || status === "cancel" || status === "expire") {
         await prisma.payment.update({
@@ -75,7 +85,7 @@ export async function midtransWebhookHandler(c) {
     return c.json({ success: true });
 }
 export async function getMyPaymentsHandler(c) {
-    const prisma = c.get('prisma');
+    const prisma = c.get("prisma");
     const user = c.user;
     const payments = await prisma.payment.findMany({
         where: { booking: { userId: user.sub } },

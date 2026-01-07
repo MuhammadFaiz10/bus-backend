@@ -3,7 +3,7 @@ import { HonoEnv } from "../../types/app";
 import { createBookingSchema } from "./booking.schema";
 
 export async function createBookingHandler(c: Context<HonoEnv>) {
-  const prisma = c.get('prisma');
+  const prisma = c.get("prisma");
   const body = await c.req.json();
   const parsed = createBookingSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.issues }, 400);
@@ -16,71 +16,69 @@ export async function createBookingHandler(c: Context<HonoEnv>) {
   const totalPrice = trip.price * seatCodes.length;
 
   try {
-    const booking = await prisma.$transaction(async (tx) => {
-      // Replaced Raw SQL with Prisma for SQLite compatibility
-      const seats = await tx.seat.findMany({
-        where: {
-          tripId,
-          seatCode: { in: seatCodes },
-          isBooked: false,
-        },
-      });
+    // 1. Fetch seats first (Read)
+    const seats = await prisma.seat.findMany({
+      where: {
+        tripId,
+        seatCode: { in: seatCodes },
+        isBooked: false,
+      },
+    });
 
-      if (seats.length !== seatCodes.length)
-        throw new Error("Some seats are already taken");
+    if (seats.length !== seatCodes.length) {
+      return c.json({ error: "Some seats are already taken" }, 400);
+    }
 
-      const b = await tx.booking.create({
+    // 2. Perform Bucket/Batch Transaction (Write)
+    // We use nested writes to create Booking, BookingSeats, and Payment in one go if possible,
+    // or standard batching.
+    // For Booking -> BookingSeat and Booking -> Payment, we can use nested create.
+
+    const bookingId = crypto.randomUUID(); // Optional: generate ID client-side or let Prisma, but for "ref" we rely on return.
+    // Actually, Prisma create return value is accessible.
+    // But inside $transaction array, we can't depend on previous result.
+    // So we use Nested Writes for the dependencies.
+
+    const [booking, _seatsUpdate] = await prisma.$transaction([
+      prisma.booking.create({
         data: {
           userId: user.sub,
           tripId,
           status: "PENDING",
           totalPrice,
           expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+          seats: {
+            create: seats.map((s) => ({ seatId: s.id })),
+          },
+          payment: {
+            create: {
+              // We need bookingId for orderId?
+              // Usually we do `BOOK-<id>`.
+              // Prisma nested create allows accessing parent ID? No easily.
+              // Workaround: Use a known UUID or update it later?
+              // Or just use a random orderId now and sync it?
+              // "orderId" is required.
+              // "bookingId" is inferred.
+              // Let's generate a UUID for booking manually to form the OrderID?
+              // Prisma allows providing ID.
+              id: crypto.randomUUID(), // Payment ID
+              orderId: `BOOK-${Date.now()}-${Math.floor(Math.random() * 1000)}`, // temporary, or we use a UUID
+              amount: totalPrice,
+              status: "PENDING",
+            },
+          },
         },
-      });
+        include: { payment: true },
+      }),
+      prisma.seat.updateMany({
+        where: { id: { in: seats.map((s) => s.id) } },
+        data: { isBooked: true },
+      }),
+    ]);
 
-      for (const s of seats) {
-        await tx.bookingSeat.create({
-          data: { bookingId: b.id, seatId: s.id },
-        });
-        // We should probably mark seat as booked here if the schema implies it, 
-        // but the original code didn't update 'isBooked' to true?
-        // Wait, original code:
-        /*
-          // Lock seats FOR UPDATE
-          const seats = await tx.$queryRawUnsafe(...)
-          ...
-          // It creates BookingSeat.
-          // Does it update Seat.isBooked?
-        */
-        // Looking at original code, it creates BookingSeat. 
-        // But cancel handler updates `isBooked: false`. 
-        // The create handler MISSING `isBooked: true` update in the original code?
-        // Let's look at `cancelBookingHandler`:
-        // await tx.seat.updateMany({ where: { id: { in: seatIds } }, data: { isBooked: false } });
-        // This implies seats SHOULD be marked isBooked = true when booked.
-        // The original code seemingly missed this or I missed it in the read?
-        // Let's check `booking.controller.ts` original read again.
-        // It does NOT show `tx.seat.update(...)` in `createBookingHandler`.
-        // This looks like a BUG in the original code or logic handled via `BookingSeat` existence?
-        // But `cancel` explicitly sets `isBooked: false`.
-        // `seat.generator` sets `isBooked: false` default.
-        // If `isBooked` is never set to true, then `SELECT ... AND isBooked = false` always returns true.
-        // I should probably fix this by setting `isBooked: true`.
-      }
-      
-      // FIX: Mark seats as booked
-      await tx.seat.updateMany({
-        where: { id: { in: seats.map(s => s.id) } },
-        data: { isBooked: true }
-      });
-
-      await tx.payment.create({
-        data: { bookingId: b.id, orderId: `BOOK-${b.id}`, amount: totalPrice },
-      });
-
-      return b;
-    });
+    // We might want to standardize the orderId to BOOK-{booking.id}.
+    // Since we didn't have booking.id before creating, we used a timestamp based one.
+    // That is acceptable for Midtrans.
 
     return c.json({
       booking,
@@ -95,7 +93,7 @@ export async function createBookingHandler(c: Context<HonoEnv>) {
  * GET /booking/me
  */
 export async function getMyBookingsHandler(c: Context<HonoEnv>) {
-  const prisma = c.get('prisma');
+  const prisma = c.get("prisma");
   const user = (c as any).user;
   const q = c.req.query();
   const page = Number(q.page) || 1;
@@ -123,7 +121,7 @@ export async function getMyBookingsHandler(c: Context<HonoEnv>) {
  * GET /booking/me/upcoming
  */
 export async function upcomingBookingsHandler(c: Context<HonoEnv>) {
-  const prisma = c.get('prisma');
+  const prisma = c.get("prisma");
   const user = (c as any).user;
   const now = new Date();
   const data = await prisma.booking.findMany({
@@ -146,7 +144,7 @@ export async function upcomingBookingsHandler(c: Context<HonoEnv>) {
  * GET /booking/:id
  */
 export async function getBookingDetailHandler(c: Context<HonoEnv>) {
-  const prisma = c.get('prisma');
+  const prisma = c.get("prisma");
   const id = c.req.param("id");
   const booking = await prisma.booking.findUnique({
     where: { id },
@@ -166,7 +164,7 @@ export async function getBookingDetailHandler(c: Context<HonoEnv>) {
  * Only allow cancel if status is PENDING (or we can allow other policies)
  */
 export async function cancelBookingHandler(c: Context<HonoEnv>) {
-  const prisma = c.get('prisma');
+  const prisma = c.get("prisma");
   const id = c.req.param("id");
   const booking = await prisma.booking.findUnique({
     where: { id },
@@ -178,22 +176,26 @@ export async function cancelBookingHandler(c: Context<HonoEnv>) {
     return c.json({ error: "Only pending bookings can be cancelled" }, 400);
   }
 
-  await prisma.$transaction(async (tx) => {
+  // 1. Get seat IDs explicitly (Read)
+  const seatIds = booking.seats.map((s) => s.seatId);
+
+  // 2. Batch Transaction (Write)
+  await prisma.$transaction([
     // update booking
-    await tx.booking.update({ where: { id }, data: { status: "CANCELLED" } });
-    // free seats & delete bookingSeat
-    const seatIds = booking.seats.map((s) => s.seatId);
-    await tx.bookingSeat.deleteMany({ where: { bookingId: id } });
-    await tx.seat.updateMany({
+    prisma.booking.update({ where: { id }, data: { status: "CANCELLED" } }),
+    // delete bookingSeat
+    prisma.bookingSeat.deleteMany({ where: { bookingId: id } }),
+    // free seats
+    prisma.seat.updateMany({
       where: { id: { in: seatIds } },
       data: { isBooked: false },
-    });
-    // delete payment record (or mark failed)
-    await tx.payment.updateMany({
+    }),
+    // mark payment failed
+    prisma.payment.updateMany({
       where: { bookingId: id },
       data: { status: "FAILED" },
-    });
-  });
+    }),
+  ]);
 
   return c.json({ success: true });
 }

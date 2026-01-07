@@ -3,7 +3,7 @@ import { HonoEnv } from "../../types/app";
 import { createTransaction } from "./midtrans.client";
 
 export async function createPaymentHandler(c: Context<HonoEnv>) {
-  const prisma = c.get('prisma');
+  const prisma = c.get("prisma");
   const body = await c.req.json();
   const { bookingId } = body;
   const user = (c as any).user;
@@ -18,15 +18,21 @@ export async function createPaymentHandler(c: Context<HonoEnv>) {
     return c.json({ error: "Booking is not pending" }, 400);
 
   const orderId = `BOOK-${booking.id}`;
-  
+
   // Get env vars
   const serverKey = c.env.MIDTRANS_SERVER_KEY;
   const isProd = c.env.MIDTRANS_IS_PRODUCTION === "true";
 
-  const mid = await createTransaction(serverKey, isProd, orderId, booking.totalPrice, {
-    first_name: user.email,
-    email: user.email,
-  });
+  const mid = await createTransaction(
+    serverKey,
+    isProd,
+    orderId,
+    booking.totalPrice,
+    {
+      first_name: user.email,
+      email: user.email,
+    }
+  );
 
   await prisma.payment.update({
     where: { bookingId: booking.id },
@@ -37,7 +43,7 @@ export async function createPaymentHandler(c: Context<HonoEnv>) {
 }
 
 export async function midtransWebhookHandler(c: Context<HonoEnv>) {
-  const prisma = c.get('prisma');
+  const prisma = c.get("prisma");
   const body = await c.req.json();
   const orderId = body.order_id;
   const status = body.transaction_status;
@@ -48,28 +54,40 @@ export async function midtransWebhookHandler(c: Context<HonoEnv>) {
   if (!payment) return c.json({ error: "Payment not found" }, 404);
 
   if (status === "settlement" || status === "capture") {
-    await prisma.$transaction(async (tx) => {
-      await tx.payment.update({
-        where: { orderId },
-        data: {
-          status: "PAID",
-          transactionId: body.transaction_id || null,
-          rawResponse: body,
-        } as any,
-      });
-      await tx.booking.update({
-        where: { id: payment.bookingId },
-        data: { status: "CONFIRMED" },
-      });
-      const bs = await tx.bookingSeat.findMany({
-        where: { bookingId: payment.bookingId },
-      });
-      const seatIds = bs.map((b) => b.seatId);
-      await tx.seat.updateMany({
-        where: { id: { in: seatIds } },
-        data: { isBooked: true },
-      });
+    // 1. Fetch related data (Read)
+    const currentPayment = await prisma.payment.findUnique({
+      where: { orderId },
+      include: {
+        booking: {
+          include: {
+            seats: true, // include bookingSeat relations
+          },
+        },
+      },
     });
+
+    if (currentPayment && currentPayment.booking) {
+      const seatIds = currentPayment.booking.seats.map((bs) => bs.seatId);
+
+      await prisma.$transaction([
+        prisma.payment.update({
+          where: { orderId },
+          data: {
+            status: "PAID",
+            transactionId: body.transaction_id || null,
+            rawResponse: body,
+          } as any,
+        }),
+        prisma.booking.update({
+          where: { id: payment.bookingId },
+          data: { status: "CONFIRMED" },
+        }),
+        prisma.seat.updateMany({
+          where: { id: { in: seatIds } },
+          data: { isBooked: true },
+        }),
+      ]);
+    }
   } else if (status === "deny" || status === "cancel" || status === "expire") {
     await prisma.payment.update({
       where: { orderId },
@@ -85,7 +103,7 @@ export async function midtransWebhookHandler(c: Context<HonoEnv>) {
 }
 
 export async function getMyPaymentsHandler(c: Context<HonoEnv>) {
-  const prisma = c.get('prisma');
+  const prisma = c.get("prisma");
   const user = (c as any).user;
   const payments = await prisma.payment.findMany({
     where: { booking: { userId: user.sub } },
