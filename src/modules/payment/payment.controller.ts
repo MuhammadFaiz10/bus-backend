@@ -18,23 +18,34 @@ export async function createPaymentHandler(c: Context<HonoEnv>) {
     if (booking.status !== "PENDING")
       return c.json({ error: "Booking is not pending" }, 400);
 
-    // Use a robust unique Order ID.
-    // If we want to allow retries, we might need a timestamp component if the previous one failed?
-    // But for Snap, keeping it consistent allows resuming.
-    // However, if we change params, we need new ID.
-    // Let's stick to BOOK-{id} for now, but handle potential error if Midtrans complains.
-    // Actually, to be safe against "Duplicate Order ID" for failed attempts that Midtrans remembers as 'failed' (cannot reuse),
-    // we should validly use the one from DB if it exists and looks valid, OR generate new one.
+    // Midtrans limits order_id to 50 chars.
+    // Booking ID is a UUID (36 chars).
+    // `BOOK-${booking.id}-${timestamp}` is 5+36+1+13 = 55 chars -> TOO LONG.
 
-    // For now, let's keep it simple: BOOK-{id}-{timestamp} to ensure unicity on every attempt?
-    // No, that creates spam.
-    // Let's rely on BOOK-{id} but wrap in try-catch.
+    // We need a shorter unique ID.
+    // Option 1: `BOOK-${booking.id.split('-')[0]}-${Date.now()}`
+    // UUID first part is 8 chars. Total: 5+8+1+13 = 27 chars. Safe.
+    // But is it unique enough? Yes, for the same booking.
+    // And collision between different bookings with same first 8 chars? Unlikely but possible.
 
-    // Better: Check if we already have a Snap token in DB?
-    // The previous code overwrote it.
+    // Option 2: Just slice the booking ID?
+    // Option 3: Use a completely random short ID but linked in DB?
 
-    // Let's try to generate unique OrderID every time to avoid "Duplicate Order ID" if previous attempt failed/expired.
-    const orderId = `BOOK-${booking.id}-${Math.floor(Date.now() / 1000)}`;
+    // Let's use: `B-${booking.id.slice(0,18)}-${Math.floor(Date.now()/1000).toString(36)}`
+    // booking.id slice 18: "74dd6a41-4d56-483b"
+    // timestamp base36: 8 chars.
+    // Total: 2 + 18 + 1 + 8 = 29 chars. Safe.
+
+    // Simpler: `T-${booking.id.split('-').pop()}-${Date.now()}`
+    // Last part of UUID is 12 chars. Date.now() is 13 chars.
+    // T- + 12 + 1 + 13 = 28 chars.
+    // `T-42fbef0615cc-1704619283463`
+
+    const timestamp = Math.floor(Date.now() / 1000);
+    const orderId = `B${booking.id.split("-")[0]}-${timestamp}`;
+    // Example: B74dd6a41-1704619283 (19 chars). Very safe.
+    // First part of UUID (8 hex chars) + timestamp (10 digits).
+    // Risk: Two bookings starting with same 8 chars created at same second? Extremely low.
 
     // Get env vars
     const serverKey = c.env.MIDTRANS_SERVER_KEY;

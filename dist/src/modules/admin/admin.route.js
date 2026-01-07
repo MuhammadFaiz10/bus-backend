@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { authMiddleware, adminOnly } from "../../middlewares/auth.middleware";
-import { dailyRevenueHandler, monthlyRevenueHandler, revenueByRouteHandler, revenueByBusHandler, paginatedBookingsHandler, bookingStatsHandler, createUserHandler, listUsersHandler, promoteUserHandler, createBusHandler, updateBusHandler, deleteBusHandler, listBusesHandler, createRouteHandler, updateRouteHandler, deleteRouteHandler, listRoutesHandler, createTripHandler, updateTripHandler, deleteTripHandler, listTripsHandler, } from "./admin.controller";
+import { dailyRevenueHandler, monthlyRevenueHandler, revenueByRouteHandler, revenueByBusHandler, paginatedBookingsHandler, bookingStatsHandler, confirmBookingHandler, createUserHandler, listUsersHandler, promoteUserHandler, createBusHandler, updateBusHandler, deleteBusHandler, listBusesHandler, createRouteHandler, updateRouteHandler, deleteRouteHandler, listRoutesHandler, createTripHandler, updateTripHandler, deleteTripHandler, listTripsHandler, } from "./admin.controller";
 const router = new Hono();
 // protect all admin routes
 router.use("*", authMiddleware);
@@ -13,6 +13,7 @@ router.get("/revenue/bus", revenueByBusHandler);
 // Bookings & stats
 router.get("/bookings", paginatedBookingsHandler);
 router.get("/bookings/stats", bookingStatsHandler);
+router.put("/bookings/:id/confirm", confirmBookingHandler);
 // User management
 router.post("/users", createUserHandler);
 router.get("/users", listUsersHandler);

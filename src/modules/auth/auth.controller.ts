@@ -16,6 +16,8 @@ const loginSchema = z.object({
 const updateProfileSchema = z.object({
   name: z.string().optional(),
   email: z.string().email().optional(),
+  phone: z.string().optional(),
+  nim: z.string().optional(),
 });
 const changePasswordSchema = z.object({
   currentPassword: z.string(),
@@ -74,9 +76,6 @@ export async function loginHandler(c: Context<HonoEnv>) {
   });
 }
 
-/**
- * GET /auth/me - Get current user profile
- */
 export async function getMeHandler(c: Context<HonoEnv>) {
   const prisma = c.get("prisma");
   const jwtUser = (c as any).user;
@@ -87,7 +86,10 @@ export async function getMeHandler(c: Context<HonoEnv>) {
       name: true,
       email: true,
       role: true,
+      phone: true,
+      nim: true,
       createdAt: true,
+      updatedAt: true,
     },
   });
   if (!user) return c.json({ error: "User not found" }, 404);
@@ -104,7 +106,7 @@ export async function updateMeHandler(c: Context<HonoEnv>) {
   const parsed = updateProfileSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.issues }, 400);
 
-  const { name, email } = parsed.data;
+  const { name, email, phone, nim } = parsed.data;
 
   // Check if email is being changed and if it's already taken
   if (email && email !== jwtUser.email) {
@@ -115,6 +117,8 @@ export async function updateMeHandler(c: Context<HonoEnv>) {
   const updateData: any = {};
   if (name !== undefined) updateData.name = name;
   if (email !== undefined) updateData.email = email;
+  if (phone !== undefined) updateData.phone = phone;
+  if (nim !== undefined) updateData.nim = nim;
 
   const user = await prisma.user.update({
     where: { id: jwtUser.sub },
@@ -124,6 +128,9 @@ export async function updateMeHandler(c: Context<HonoEnv>) {
       name: true,
       email: true,
       role: true,
+      phone: true,
+      nim: true,
+      updatedAt: true,
     },
   });
 

@@ -1,6 +1,6 @@
 import { Context } from "hono";
 import { HonoEnv } from "../../types/app";
-import { createBookingSchema } from "./booking.schema";
+import { createBookingSchema, changeSeatSchema } from "./booking.schema";
 
 export async function createBookingHandler(c: Context<HonoEnv>) {
   const prisma = c.get("prisma");
@@ -98,11 +98,17 @@ export async function getMyBookingsHandler(c: Context<HonoEnv>) {
   const q = c.req.query();
   const page = Number(q.page) || 1;
   const perPage = Math.min(Number(q.perPage) || 20, 100);
+  const status = q.status as string | undefined;
+
+  const where: any = { userId: user.sub };
+  if (status) {
+    where.status = status;
+  }
 
   const [total, data] = await Promise.all([
-    prisma.booking.count({ where: { userId: user.sub } }),
+    prisma.booking.count({ where }),
     prisma.booking.findMany({
-      where: { userId: user.sub },
+      where,
       include: {
         trip: { include: { bus: true, route: true } },
         seats: { include: { seat: true } },
@@ -198,4 +204,107 @@ export async function cancelBookingHandler(c: Context<HonoEnv>) {
   ]);
 
   return c.json({ success: true });
+}
+
+/**
+ * PUT /booking/:id/seat
+ * Change seats for an existing booking.
+ * Constraints:
+ * - Same trip only.
+ * - Same number of seats (1-to-1 swap).
+ * - Target seats must be available.
+ */
+export async function changeSeatHandler(c: Context<HonoEnv>) {
+  const prisma = c.get("prisma");
+  const id = c.req.param("id");
+  const user = (c as any).user;
+  const body = await c.req.json();
+
+  const parsed = changeSeatSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: parsed.error.issues }, 400);
+
+  const { newSeatCodes } = parsed.data;
+
+  // 1. Fetch Booking
+  const booking = await prisma.booking.findUnique({
+    where: { id },
+    include: { seats: true, trip: true },
+  });
+
+  if (!booking) return c.json({ error: "Booking not found" }, 404);
+
+  // 2. Authorization Check (User owns booking or is Admin)
+  // Assuming 'user' object has role. If simple user, must match sub.
+  if (user.role !== "ADMIN" && booking.userId !== user.sub) {
+    return c.json({ error: "Unauthorized" }, 403);
+  }
+
+  // 3. Status Check
+  if (["CANCELLED", "EXPIRED", "FAILED"].includes(booking.status)) {
+    return c.json(
+      { error: "Cannot change seats for cancelled/expired booking" },
+      400
+    );
+  }
+
+  // 4. Validate Seat Count
+  if (newSeatCodes.length !== booking.seats.length) {
+    return c.json(
+      {
+        error: `You must select exactly ${booking.seats.length} seats to swap.`,
+      },
+      400
+    );
+  }
+
+  // 5. Check Availability of New Seats on SAME Trip
+  const tripId = booking.tripId;
+  const newSeats = await prisma.seat.findMany({
+    where: {
+      tripId,
+      seatCode: { in: newSeatCodes },
+      isBooked: false,
+    },
+  });
+
+  if (newSeats.length !== newSeatCodes.length) {
+    return c.json(
+      { error: "One or more selected seats are not available." },
+      400
+    );
+  }
+
+  // 6. Execute Transaction
+  try {
+    const oldSeatIds = booking.seats.map((s) => s.seatId);
+    const newSeatIds = newSeats.map((s) => s.id);
+
+    await prisma.$transaction([
+      // A. Unbook old seats
+      prisma.seat.updateMany({
+        where: { id: { in: oldSeatIds } },
+        data: { isBooked: false },
+      }),
+      // B. Delete old BookingSeat relations
+      prisma.bookingSeat.deleteMany({
+        where: { bookingId: id },
+      }),
+      // C. Book new seats
+      prisma.seat.updateMany({
+        where: { id: { in: newSeatIds } },
+        data: { isBooked: true },
+      }),
+      // D. Create new BookingSeat relations
+      prisma.bookingSeat.createMany({
+        data: newSeatIds.map((seatId) => ({
+          bookingId: id,
+          seatId,
+        })),
+      }),
+    ]);
+
+    return c.json({ success: true, message: "Seats changed successfully." });
+  } catch (e: any) {
+    return c.json({ error: e.message || "Failed to change seats" }, 500);
+  }
 }

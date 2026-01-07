@@ -40,9 +40,24 @@ export default function Bookings() {
     loadBookings(1, status);
   }
 
+  async function handleConfirm(id: string) {
+    if (
+      !window.confirm("Are you sure you want to manually confirm this booking?")
+    )
+      return;
+    try {
+      await api.put(`/admin/bookings/${id}/confirm`);
+      showToast("Booking confirmed successfully", "success");
+      loadBookings(pagination.page, statusFilter);
+    } catch (err: any) {
+      showToast(err.userMessage || "Failed to confirm booking", "error");
+    }
+  }
+
   const totalPages = Math.ceil(pagination.total / pagination.perPage);
 
   function getStatusBadge(status: string) {
+    // ... existing ...
     const colors: any = {
       PENDING: "#ffc107",
       CONFIRMED: "#28a745",
@@ -57,13 +72,16 @@ export default function Bookings() {
       padding: "4px 8px",
       borderRadius: 4,
       fontSize: 12,
+      display: "inline-block",
     };
   }
 
   return (
     <div>
+      {/* ... existing header ... */}
       <h2>Bookings</h2>
       <div className="card">
+        {/* ... filters ... */}
         <div
           style={{
             display: "flex",
@@ -132,6 +150,7 @@ export default function Bookings() {
               <th>Payment Amount</th>
               <th>Transaction ID</th>
               <th>Created</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -166,6 +185,24 @@ export default function Bookings() {
                     : "-"}
                 </td>
                 <td>{new Date(b.createdAt).toLocaleString()}</td>
+                <td>
+                  {b.status === "PENDING" && (
+                    <button
+                      className="button"
+                      style={{
+                        padding: "4px 8px",
+                        fontSize: 12,
+                        background: "#28a745",
+                        color: "white",
+                        border: "none",
+                        cursor: "pointer",
+                      }}
+                      onClick={() => handleConfirm(b.id)}
+                    >
+                      Confirm
+                    </button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

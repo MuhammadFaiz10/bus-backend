@@ -15,7 +15,7 @@ function parseDate(q, key) {
  * Revenue handlers
  */
 export async function dailyRevenueHandler(c) {
-    const prisma = c.get('prisma');
+    const prisma = c.get("prisma");
     const q = c.req.query();
     const day = parseDate(q, "date") || new Date();
     const start = new Date(day);
@@ -29,7 +29,7 @@ export async function dailyRevenueHandler(c) {
     return c.json({ date: start.toISOString(), revenue: res._sum.amount || 0 });
 }
 export async function monthlyRevenueHandler(c) {
-    const prisma = c.get('prisma');
+    const prisma = c.get("prisma");
     const q = c.req.query();
     const y = Number(q.year) || new Date().getFullYear();
     const m = Number(q.month) ? Number(q.month) - 1 : new Date().getMonth();
@@ -42,7 +42,7 @@ export async function monthlyRevenueHandler(c) {
     return c.json({ year: y, month: m + 1, revenue: res._sum.amount || 0 });
 }
 export async function revenueByRouteHandler(c) {
-    const prisma = c.get('prisma');
+    const prisma = c.get("prisma");
     const rows = await prisma.$queryRawUnsafe(`
     SELECT r.id as route_id, r.origin, r.destination, SUM(p.amount) as revenue
     FROM "Route" r
@@ -56,7 +56,7 @@ export async function revenueByRouteHandler(c) {
     return c.json(rows);
 }
 export async function revenueByBusHandler(c) {
-    const prisma = c.get('prisma');
+    const prisma = c.get("prisma");
     const rows = await prisma.$queryRawUnsafe(`
     SELECT bus.id as bus_id, bus.name, bus.plate, SUM(p.amount) as revenue
     FROM "Bus" bus
@@ -74,7 +74,7 @@ export async function revenueByBusHandler(c) {
  * query params: page, perPage, status, from, to, routeId, tripId
  */
 export async function paginatedBookingsHandler(c) {
-    const prisma = c.get('prisma');
+    const prisma = c.get("prisma");
     const q = c.req.query();
     const page = Number(q.page) || 1;
     const perPage = Math.min(Number(q.perPage) || 20, 100);
@@ -112,7 +112,7 @@ export async function paginatedBookingsHandler(c) {
     return c.json({ page, perPage, total, data });
 }
 export async function bookingStatsHandler(c) {
-    const prisma = c.get('prisma');
+    const prisma = c.get("prisma");
     const total = await prisma.booking.count();
     const counts = await prisma.booking.groupBy({
         by: ["status"],
@@ -120,11 +120,40 @@ export async function bookingStatsHandler(c) {
     });
     return c.json({ total, counts });
 }
+export async function confirmBookingHandler(c) {
+    const prisma = c.get("prisma");
+    const id = c.req.param("id");
+    const booking = await prisma.booking.findUnique({
+        where: { id },
+        include: { seats: true, payment: true },
+    });
+    if (!booking)
+        return c.json({ error: "Booking not found" }, 404);
+    if (booking.status === "CONFIRMED") {
+        return c.json({ error: "Booking is already confirmed" }, 400);
+    }
+    // Transaction to update booking, payment, and seats
+    await prisma.$transaction([
+        prisma.booking.update({
+            where: { id },
+            data: { status: "CONFIRMED" },
+        }),
+        prisma.payment.updateMany({
+            where: { bookingId: id },
+            data: { status: "PAID", transactionId: "MANUAL-ADMIN" },
+        }),
+        prisma.seat.updateMany({
+            where: { id: { in: booking.seats.map((s) => s.seatId) } },
+            data: { isBooked: true },
+        }),
+    ]);
+    return c.json({ success: true, message: "Booking confirmed manually" });
+}
 /**
  * Admin user management
  */
 export async function createUserHandler(c) {
-    const prisma = c.get('prisma');
+    const prisma = c.get("prisma");
     const body = await c.req.json();
     const parsed = createUserSchema.safeParse(body);
     if (!parsed.success)
@@ -147,7 +176,7 @@ export async function createUserHandler(c) {
     }
 }
 export async function listUsersHandler(c) {
-    const prisma = c.get('prisma');
+    const prisma = c.get("prisma");
     const q = c.req.query();
     const page = Number(q.page) || 1;
     const perPage = Math.min(Number(q.perPage) || 50, 200);
@@ -162,7 +191,7 @@ export async function listUsersHandler(c) {
     return c.json({ page, perPage, total, users });
 }
 export async function promoteUserHandler(c) {
-    const prisma = c.get('prisma');
+    const prisma = c.get("prisma");
     const id = c.req.param("id");
     const body = await c.req.json();
     const parsed = promoteUserSchema.safeParse(body);
@@ -183,7 +212,7 @@ export async function promoteUserHandler(c) {
  * Bus CRUD
  */
 export async function createBusHandler(c) {
-    const prisma = c.get('prisma');
+    const prisma = c.get("prisma");
     const body = await c.req.json();
     const parsed = createBusSchema.safeParse(body);
     if (!parsed.success)
@@ -197,7 +226,7 @@ export async function createBusHandler(c) {
     }
 }
 export async function updateBusHandler(c) {
-    const prisma = c.get('prisma');
+    const prisma = c.get("prisma");
     const id = c.req.param("id");
     const body = await c.req.json();
     const parsed = updateBusSchema.safeParse(body);
@@ -215,7 +244,7 @@ export async function updateBusHandler(c) {
     }
 }
 export async function deleteBusHandler(c) {
-    const prisma = c.get('prisma');
+    const prisma = c.get("prisma");
     const id = c.req.param("id");
     try {
         await prisma.bus.delete({ where: { id } });
@@ -226,7 +255,7 @@ export async function deleteBusHandler(c) {
     }
 }
 export async function listBusesHandler(c) {
-    const prisma = c.get('prisma');
+    const prisma = c.get("prisma");
     const buses = await prisma.bus.findMany({ orderBy: { createdAt: "desc" } });
     return c.json(buses);
 }
@@ -234,7 +263,7 @@ export async function listBusesHandler(c) {
  * Route CRUD
  */
 export async function createRouteHandler(c) {
-    const prisma = c.get('prisma');
+    const prisma = c.get("prisma");
     const body = await c.req.json();
     const parsed = createRouteSchema.safeParse(body);
     if (!parsed.success)
@@ -248,7 +277,7 @@ export async function createRouteHandler(c) {
     }
 }
 export async function updateRouteHandler(c) {
-    const prisma = c.get('prisma');
+    const prisma = c.get("prisma");
     const id = c.req.param("id");
     const body = await c.req.json();
     const parsed = updateRouteSchema.safeParse(body);
@@ -266,7 +295,7 @@ export async function updateRouteHandler(c) {
     }
 }
 export async function deleteRouteHandler(c) {
-    const prisma = c.get('prisma');
+    const prisma = c.get("prisma");
     const id = c.req.param("id");
     try {
         await prisma.route.delete({ where: { id } });
@@ -277,7 +306,7 @@ export async function deleteRouteHandler(c) {
     }
 }
 export async function listRoutesHandler(c) {
-    const prisma = c.get('prisma');
+    const prisma = c.get("prisma");
     const routes = await prisma.route.findMany({
         orderBy: { createdAt: "desc" },
     });
@@ -287,7 +316,7 @@ export async function listRoutesHandler(c) {
  * Trip CRUD (create auto-generate seats option)
  */
 export async function createTripHandler(c) {
-    const prisma = c.get('prisma');
+    const prisma = c.get("prisma");
     const body = await c.req.json();
     const parsed = createTripSchema.safeParse(body);
     if (!parsed.success)
@@ -324,7 +353,7 @@ export async function createTripHandler(c) {
     }
 }
 export async function updateTripHandler(c) {
-    const prisma = c.get('prisma');
+    const prisma = c.get("prisma");
     const id = c.req.param("id");
     const body = await c.req.json();
     const parsed = updateTripSchema.safeParse(body);
@@ -350,7 +379,7 @@ export async function updateTripHandler(c) {
     }
 }
 export async function deleteTripHandler(c) {
-    const prisma = c.get('prisma');
+    const prisma = c.get("prisma");
     const id = c.req.param("id");
     try {
         await prisma.trip.delete({ where: { id } });
@@ -361,7 +390,7 @@ export async function deleteTripHandler(c) {
     }
 }
 export async function listTripsHandler(c) {
-    const prisma = c.get('prisma');
+    const prisma = c.get("prisma");
     const q = c.req.query();
     const trips = await prisma.trip.findMany({
         include: { bus: true, route: true, seats: true },

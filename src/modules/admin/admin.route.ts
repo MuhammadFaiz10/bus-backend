@@ -7,6 +7,7 @@ import {
   revenueByBusHandler,
   paginatedBookingsHandler,
   bookingStatsHandler,
+  confirmBookingHandler,
   createUserHandler,
   listUsersHandler,
   promoteUserHandler,
@@ -40,6 +41,7 @@ router.get("/revenue/bus", revenueByBusHandler);
 // Bookings & stats
 router.get("/bookings", paginatedBookingsHandler);
 router.get("/bookings/stats", bookingStatsHandler);
+router.put("/bookings/:id/confirm", confirmBookingHandler);
 
 // User management
 router.post("/users", createUserHandler);

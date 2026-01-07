@@ -37,9 +37,14 @@ export async function seedHandler(c: Context<HonoEnv>) {
     });
 
     const usersData = [
-      { name: "Andi Saputra", email: "andi@test.com" },
-      { name: "Budi Santoso", email: "budi@test.com" },
-      { name: "Citra Lestari", email: "citra@test.com" },
+      {
+        name: "Andi Saputra",
+        email: "andi@test.com",
+        phone: "081234567890",
+        nim: "12345678",
+      }, // With details
+      { name: "Budi Santoso", email: "budi@test.com", phone: "081987654321" }, // Phone only
+      { name: "Citra Lestari", email: "citra@test.com" }, // Nullable test
       { name: "Dewi Pratama", email: "dewi@test.com" },
       { name: "Eko Wahyudi", email: "eko@test.com" },
       { name: "Farhan Hakim", email: "farhan@test.com" },

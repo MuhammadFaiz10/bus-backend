@@ -13,6 +13,8 @@ const loginSchema = z.object({
 const updateProfileSchema = z.object({
     name: z.string().optional(),
     email: z.string().email().optional(),
+    phone: z.string().optional(),
+    nim: z.string().optional(),
 });
 const changePasswordSchema = z.object({
     currentPassword: z.string(),
@@ -66,9 +68,6 @@ export async function loginHandler(c) {
         user: { id: user.id, name: user.name, email: user.email, role: user.role },
     });
 }
-/**
- * GET /auth/me - Get current user profile
- */
 export async function getMeHandler(c) {
     const prisma = c.get("prisma");
     const jwtUser = c.user;
@@ -79,7 +78,10 @@ export async function getMeHandler(c) {
             name: true,
             email: true,
             role: true,
+            phone: true,
+            nim: true,
             createdAt: true,
+            updatedAt: true,
         },
     });
     if (!user)
@@ -96,7 +98,7 @@ export async function updateMeHandler(c) {
     const parsed = updateProfileSchema.safeParse(body);
     if (!parsed.success)
         return c.json({ error: parsed.error.issues }, 400);
-    const { name, email } = parsed.data;
+    const { name, email, phone, nim } = parsed.data;
     // Check if email is being changed and if it's already taken
     if (email && email !== jwtUser.email) {
         const existing = await prisma.user.findUnique({ where: { email } });
@@ -108,6 +110,10 @@ export async function updateMeHandler(c) {
         updateData.name = name;
     if (email !== undefined)
         updateData.email = email;
+    if (phone !== undefined)
+        updateData.phone = phone;
+    if (nim !== undefined)
+        updateData.nim = nim;
     const user = await prisma.user.update({
         where: { id: jwtUser.sub },
         data: updateData,
@@ -116,6 +122,9 @@ export async function updateMeHandler(c) {
             name: true,
             email: true,
             role: true,
+            phone: true,
+            nim: true,
+            updatedAt: true,
         },
     });
     return c.json(user);

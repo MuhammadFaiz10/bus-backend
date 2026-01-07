@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { authMiddleware } from "../../middlewares/auth.middleware";
-import { createBookingHandler, getMyBookingsHandler, getBookingDetailHandler, cancelBookingHandler, upcomingBookingsHandler, } from "./booking.controller";
+import { createBookingHandler, getMyBookingsHandler, getBookingDetailHandler, cancelBookingHandler, upcomingBookingsHandler, changeSeatHandler, } from "./booking.controller";
 import { requireOwner } from "../../middlewares/rbac.middleware";
 const router = new Hono();
 router.use("*", authMiddleware);
@@ -13,4 +13,6 @@ router.get("/me/upcoming", upcomingBookingsHandler);
 router.get("/:id", requireOwner("booking", "id"), getBookingDetailHandler);
 // cancel booking (owner or admin)
 router.post("/:id/cancel", requireOwner("booking", "id"), cancelBookingHandler);
+// change seat (owner or admin)
+router.put("/:id/seat", requireOwner("booking", "id"), changeSeatHandler);
 export default router;

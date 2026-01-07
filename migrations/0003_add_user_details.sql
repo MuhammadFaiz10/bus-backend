@@ -1,0 +1,6 @@
+-- Migration number: 0003 	 2024-01-20T10:00:00.000Z
+ALTER TABLE "User"
+ADD COLUMN "phone" TEXT;
+
+ALTER TABLE "User"
+ADD COLUMN "nim" TEXT;
