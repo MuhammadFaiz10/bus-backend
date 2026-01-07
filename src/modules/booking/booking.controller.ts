@@ -81,7 +81,7 @@ export async function createBookingHandler(c: Context<HonoEnv>) {
     // That is acceptable for Midtrans.
 
     return c.json({
-      booking,
+      ...booking,
       message: "Booking created. Please proceed to payment.",
     });
   } catch (err: any) {

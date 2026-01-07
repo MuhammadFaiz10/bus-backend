@@ -4,29 +4,54 @@ export async function createPaymentHandler(c) {
     const body = await c.req.json();
     const { bookingId } = body;
     const user = c.user;
-    const booking = await prisma.booking.findUnique({
-        where: { id: bookingId },
-        include: { payment: true },
-    });
-    if (!booking)
-        return c.json({ error: "Booking not found" }, 404);
-    if (booking.userId !== user.sub)
-        return c.json({ error: "Forbidden" }, 403);
-    if (booking.status !== "PENDING")
-        return c.json({ error: "Booking is not pending" }, 400);
-    const orderId = `BOOK-${booking.id}`;
-    // Get env vars
-    const serverKey = c.env.MIDTRANS_SERVER_KEY;
-    const isProd = c.env.MIDTRANS_IS_PRODUCTION === "true";
-    const mid = await createTransaction(serverKey, isProd, orderId, booking.totalPrice, {
-        first_name: user.email,
-        email: user.email,
-    });
-    await prisma.payment.update({
-        where: { bookingId: booking.id },
-        data: { rawResponse: mid, orderId, amount: booking.totalPrice },
-    });
-    return c.json({ payment: mid });
+    try {
+        const booking = await prisma.booking.findUnique({
+            where: { id: bookingId },
+            include: { payment: true },
+        });
+        if (!booking)
+            return c.json({ error: "Booking not found" }, 404);
+        if (booking.userId !== user.sub)
+            return c.json({ error: "Forbidden" }, 403);
+        if (booking.status !== "PENDING")
+            return c.json({ error: "Booking is not pending" }, 400);
+        // Use a robust unique Order ID.
+        // If we want to allow retries, we might need a timestamp component if the previous one failed?
+        // But for Snap, keeping it consistent allows resuming.
+        // However, if we change params, we need new ID.
+        // Let's stick to BOOK-{id} for now, but handle potential error if Midtrans complains.
+        // Actually, to be safe against "Duplicate Order ID" for failed attempts that Midtrans remembers as 'failed' (cannot reuse),
+        // we should validly use the one from DB if it exists and looks valid, OR generate new one.
+        // For now, let's keep it simple: BOOK-{id}-{timestamp} to ensure unicity on every attempt?
+        // No, that creates spam.
+        // Let's rely on BOOK-{id} but wrap in try-catch.
+        // Better: Check if we already have a Snap token in DB?
+        // The previous code overwrote it.
+        // Let's try to generate unique OrderID every time to avoid "Duplicate Order ID" if previous attempt failed/expired.
+        const orderId = `BOOK-${booking.id}-${Math.floor(Date.now() / 1000)}`;
+        // Get env vars
+        const serverKey = c.env.MIDTRANS_SERVER_KEY;
+        if (!serverKey)
+            throw new Error("Midtrans Server Key is missing");
+        const isProd = c.env.MIDTRANS_IS_PRODUCTION === "true";
+        const mid = await createTransaction(serverKey, isProd, orderId, booking.totalPrice, {
+            first_name: user.email,
+            email: user.email,
+        });
+        await prisma.payment.update({
+            where: { bookingId: booking.id },
+            data: { rawResponse: mid, orderId, amount: booking.totalPrice },
+        });
+        return c.json({ payment: mid });
+    }
+    catch (err) {
+        console.error("Payment Error:", err);
+        // Extract meaningful error from Axios if possible
+        const msg = err.response?.data?.error_messages?.join(", ") ||
+            err.message ||
+            "Payment initiation failed";
+        return c.json({ error: `Failed to initiate payment: ${msg}` }, 500);
+    }
 }
 export async function midtransWebhookHandler(c) {
     const prisma = c.get("prisma");

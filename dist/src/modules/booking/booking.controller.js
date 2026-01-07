@@ -71,7 +71,7 @@ export async function createBookingHandler(c) {
         // Since we didn't have booking.id before creating, we used a timestamp based one.
         // That is acceptable for Midtrans.
         return c.json({
-            booking,
+            ...booking,
             message: "Booking created. Please proceed to payment.",
         });
     }
